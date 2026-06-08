@@ -10,6 +10,7 @@ static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@tola.wxw";
 static NSString * const TolaFacebookURL = @"https://www.facebook.com/tolawxw";
 static NSString * const TolaWebsiteURL = @"https://tolaone.com";
 static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
+static BOOL const TolaStrictAimESP = YES;
 
 static CGFloat TolaDistance(CGPoint a, CGPoint b) {
     CGFloat dx = a.x - b.x;
@@ -96,6 +97,9 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
 @property (nonatomic, strong) NSArray<TolaPoolPrediction *> *predictions;
 @property (nonatomic, strong) NSArray<NSValue *> *greenPockets;
 @property (nonatomic, assign) CGRect detectedTableRect;
+@property (nonatomic, assign) CGPoint aimStart;
+@property (nonatomic, assign) CGPoint aimEnd;
+@property (nonatomic, assign) BOOL hasAimLine;
 @property (nonatomic, copy) NSString *statusText;
 @end
 
@@ -111,6 +115,7 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
         self.predictions = @[];
         self.greenPockets = @[];
         self.statusText = @"Scanning...";
+        self.hasAimLine = NO;
     }
     return self;
 }
@@ -175,6 +180,13 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
                          to:prediction.end
                       color:prediction.color
                       width:prediction.width];
+    }
+
+    if (self.hasAimLine) {
+        [self drawGuideFrom:self.aimStart
+                         to:self.aimEnd
+                      color:[UIColor colorWithWhite:1.0 alpha:0.92]
+                      width:2.2];
     }
 
     for (NSValue *pocketValue in self.greenPockets) {
@@ -542,6 +554,103 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
     ];
 }
 
+- (BOOL)lineFrom:(CGPoint)start to:(CGPoint)end intersectsPocket:(CGPoint *)pocket tableRect:(CGRect)tableRect {
+    NSArray<NSValue *> *pockets = [self pocketsForTableRect:tableRect];
+    CGFloat threshold = MAX(CGRectGetWidth(tableRect), CGRectGetHeight(tableRect)) * 0.035;
+
+    for (NSValue *pocketValue in pockets) {
+        CGPoint candidate = pocketValue.CGPointValue;
+        CGFloat distance = TolaDistancePointToSegment(candidate, start, end);
+        if (distance <= threshold) {
+            if (pocket) {
+                *pocket = candidate;
+            }
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+- (CGPoint)rayFrom:(CGPoint)start direction:(CGPoint)direction intersectionWithTableRect:(CGRect)tableRect {
+    direction = TolaNormalizeVector(direction);
+    if (CGPointEqualToPoint(direction, CGPointZero) || CGRectIsEmpty(tableRect)) {
+        return start;
+    }
+
+    CGFloat bestT = CGFLOAT_MAX;
+
+    if (fabs(direction.x) > 0.0001) {
+        CGFloat leftT = (CGRectGetMinX(tableRect) - start.x) / direction.x;
+        CGFloat rightT = (CGRectGetMaxX(tableRect) - start.x) / direction.x;
+        if (leftT > 0.0) {
+            CGFloat y = start.y + direction.y * leftT;
+            if (y >= CGRectGetMinY(tableRect) && y <= CGRectGetMaxY(tableRect)) {
+                bestT = MIN(bestT, leftT);
+            }
+        }
+        if (rightT > 0.0) {
+            CGFloat y = start.y + direction.y * rightT;
+            if (y >= CGRectGetMinY(tableRect) && y <= CGRectGetMaxY(tableRect)) {
+                bestT = MIN(bestT, rightT);
+            }
+        }
+    }
+
+    if (fabs(direction.y) > 0.0001) {
+        CGFloat topT = (CGRectGetMinY(tableRect) - start.y) / direction.y;
+        CGFloat bottomT = (CGRectGetMaxY(tableRect) - start.y) / direction.y;
+        if (topT > 0.0) {
+            CGFloat x = start.x + direction.x * topT;
+            if (x >= CGRectGetMinX(tableRect) && x <= CGRectGetMaxX(tableRect)) {
+                bestT = MIN(bestT, topT);
+            }
+        }
+        if (bottomT > 0.0) {
+            CGFloat x = start.x + direction.x * bottomT;
+            if (x >= CGRectGetMinX(tableRect) && x <= CGRectGetMaxX(tableRect)) {
+                bestT = MIN(bestT, bottomT);
+            }
+        }
+    }
+
+    if (bestT == CGFLOAT_MAX) {
+        return start;
+    }
+
+    return CGPointMake(start.x + direction.x * bestT,
+                       start.y + direction.y * bestT);
+}
+
+- (TolaPoolBall *)firstBallHitFrom:(CGPoint)start
+                         direction:(CGPoint)direction
+                             balls:(NSArray<TolaPoolBall *> *)balls
+                            ignore:(TolaPoolBall *)ignoredBall
+                         tableRect:(CGRect)tableRect {
+    CGPoint end = [self rayFrom:start direction:direction intersectionWithTableRect:tableRect];
+    TolaPoolBall *bestBall = nil;
+    CGFloat bestDistance = CGFLOAT_MAX;
+
+    for (TolaPoolBall *ball in balls) {
+        if (ball == ignoredBall) {
+            continue;
+        }
+
+        CGFloat lineDistance = TolaDistancePointToSegment(ball.center, start, end);
+        if (lineDistance > ball.radius * 1.05) {
+            continue;
+        }
+
+        CGFloat alongDistance = TolaDistance(start, ball.center);
+        if (alongDistance < bestDistance) {
+            bestDistance = alongDistance;
+            bestBall = ball;
+        }
+    }
+
+    return bestBall;
+}
+
 - (BOOL)isPathClearFrom:(CGPoint)start
                      to:(CGPoint)end
                   balls:(NSArray<TolaPoolBall *> *)balls
@@ -696,8 +805,50 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
     NSArray<NSValue *> *pockets = [self pocketsForTableRect:tableRect];
     NSMutableArray<NSDictionary *> *candidates = [NSMutableArray array];
 
+    if (TolaStrictAimESP && !hasAimDirection) {
+        return @{
+            @"balls": cueBall ? @[cueBall] : @[],
+            @"predictions": @[],
+            @"pockets": @[],
+            @"status": @"Auto ESP: aim not detected"
+        };
+    }
+
+    TolaPoolBall *aimedObjectBall = nil;
+    if (hasAimDirection) {
+        aimedObjectBall = [self firstBallHitFrom:cueBall.center
+                                      direction:aimDirection
+                                          balls:balls
+                                         ignore:cueBall
+                                      tableRect:tableRect];
+        if (TolaStrictAimESP && !aimedObjectBall) {
+            CGPoint aimEnd = [self rayFrom:cueBall.center direction:aimDirection intersectionWithTableRect:tableRect];
+            CGPoint touchedPocket = CGPointZero;
+            NSMutableArray<TolaPoolPrediction *> *aimOnly = [NSMutableArray arrayWithObject:
+                [self predictionFrom:cueBall.center
+                                   to:aimEnd
+                                color:[UIColor colorWithWhite:1.0 alpha:0.82]
+                                width:2.0]
+            ];
+            NSMutableArray<NSValue *> *pocketHits = [NSMutableArray array];
+            if ([self lineFrom:cueBall.center to:aimEnd intersectsPocket:&touchedPocket tableRect:tableRect]) {
+                [pocketHits addObject:[NSValue valueWithCGPoint:touchedPocket]];
+            }
+            return @{
+                @"balls": @[cueBall],
+                @"predictions": aimOnly,
+                @"pockets": pocketHits,
+                @"status": @"Auto ESP: cue path"
+            };
+        }
+    }
+
     for (TolaPoolBall *objectBall in balls) {
         if (objectBall == cueBall) {
+            continue;
+        }
+
+        if (TolaStrictAimESP && aimedObjectBall && objectBall != aimedObjectBall) {
             continue;
         }
 
@@ -1108,6 +1259,12 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
 
     NSMutableDictionary *result = [NSMutableDictionary dictionaryWithDictionary:prediction];
     result[@"table"] = [NSValue valueWithCGRect:tableRect];
+    result[@"hasAim"] = @(hasAimDirection);
+    if (hasAimDirection && cueBall) {
+        CGPoint aimEnd = [self rayFrom:cueBall.center direction:aimDirection intersectionWithTableRect:tableRect];
+        result[@"aimStart"] = [NSValue valueWithCGPoint:cueBall.center];
+        result[@"aimEnd"] = [NSValue valueWithCGPoint:aimEnd];
+    }
     return result;
 }
 
@@ -1155,6 +1312,7 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
         self.lineOverlayView.predictions = @[];
         self.lineOverlayView.greenPockets = @[];
         self.lineOverlayView.detectedTableRect = CGRectZero;
+        self.lineOverlayView.hasAimLine = NO;
         self.lineOverlayView.statusText = @"Auto ESP: cannot see table";
         [self.lineOverlayView setNeedsDisplay];
         return;
@@ -1164,6 +1322,11 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
     self.lineOverlayView.predictions = result[@"predictions"] ?: @[];
     self.lineOverlayView.greenPockets = result[@"pockets"] ?: @[];
     self.lineOverlayView.detectedTableRect = [result[@"table"] CGRectValue];
+    self.lineOverlayView.hasAimLine = [result[@"hasAim"] boolValue];
+    if (self.lineOverlayView.hasAimLine) {
+        self.lineOverlayView.aimStart = [result[@"aimStart"] CGPointValue];
+        self.lineOverlayView.aimEnd = [result[@"aimEnd"] CGPointValue];
+    }
     self.lineOverlayView.statusText = result[@"status"] ?: @"Auto ESP";
     [self.lineOverlayView setNeedsDisplay];
 }

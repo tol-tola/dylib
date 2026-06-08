@@ -25,10 +25,11 @@ these data sources:
 - A screen-vision detector that reads the rendered table image, detects balls,
   detects cue angle/power, and then runs a local pool-physics simulation.
 
-The current version shows one clear detected shot path, marks the reachable
-pocket green, and draws approximate cue/object paths. More exact final resting
-spots and shot-power prediction require better cue/power detection and a fuller
-physics model.
+The current version is strict: it prefers showing nothing over showing a wrong
+shot. It follows the detected aim line, finds the first ball on that path, and
+only draws a pocket line when the detected path is clear. More exact final
+resting spots and shot-power prediction require better cue/power detection and a
+fuller physics model.
 
 Edit these values at the top of `TolaDylib/Tola.m` before building:
 
