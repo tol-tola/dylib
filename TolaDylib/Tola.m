@@ -358,18 +358,9 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                     accentColor:[self tolaPurple]
                                          action:@selector(openWebsite)
                                         compact:compact];
-    UIControl *close = [self menuRowWithTitle:@"Close"
-                                     subtitle:@"Close this menu"
-                                     iconName:@"xmark"
-                                 fallbackText:@"X"
-                                  accentColor:[UIColor colorWithWhite:0.74 alpha:1.0]
-                                       action:@selector(closeMenu)
-                                      compact:compact];
-    close.backgroundColor = [UIColor colorWithWhite:0.10 alpha:0.82];
-
     UIStackView *rowsView = [self stackWithAxis:UILayoutConstraintAxisVertical
                                         spacing:(compact ? 12.0 : 16.0)
-                                         views:@[telegram, tikTok, facebook, website, close]];
+                                         views:@[telegram, tikTok, facebook, website]];
 
     UIStackView *contentStack = [[UIStackView alloc] initWithArrangedSubviews:@[
         topIconView,

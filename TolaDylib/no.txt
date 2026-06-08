@@ -1,0 +1,6 @@
+static NSString * const TolaMenuTitle = @"TolaiOS";
+static NSString * const TolaMenuSubtitle = @"Unknown Developer";
+static NSString * const TolaTelegramURL = @"https://t.me/toltola";
+static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@tola.wxw";
+static NSString * const TolaFacebookURL = @"https://www.facebook.com/tolawxw";
+static NSString * const TolaWebsiteURL = @"https://tolaone.com";
