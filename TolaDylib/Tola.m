@@ -4,10 +4,10 @@
 
 static NSString * const TolaMenuTitle = @"TolaiOS";
 static NSString * const TolaMenuSubtitle = @"Unknown Developer";
-static NSString * const TolaTelegramURL = @"https://t.me/your_username";
-static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@your_username";
-static NSString * const TolaFacebookURL = @"https://www.facebook.com/your_username";
-static NSString * const TolaWebsiteURL = @"https://example.com";
+static NSString * const TolaTelegramURL = @"https://t.me/toltola";
+static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@tola.wxw";
+static NSString * const TolaFacebookURL = @"https://www.facebook.com/tolawxw";
+static NSString * const TolaWebsiteURL = @"https://tolaone.com";
 static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
 @interface TolaPassthroughWindow : UIWindow
@@ -203,16 +203,10 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                         compact:(BOOL)compact {
     UIControl *row = [UIControl new];
     row.translatesAutoresizingMaskIntoConstraints = NO;
-    row.backgroundColor = [accentColor colorWithAlphaComponent:0.13];
-    row.layer.cornerRadius = compact ? 18.0 : 24.0;
-    row.layer.borderWidth = 1.4;
-    row.layer.borderColor = [accentColor colorWithAlphaComponent:0.38].CGColor;
+    row.backgroundColor = [accentColor colorWithAlphaComponent:0.15];
+    row.layer.cornerRadius = compact ? 13.0 : 16.0;
+    row.layer.borderWidth = 0.0;
     [row addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
-
-    UIView *iconHolder = [UIView new];
-    iconHolder.translatesAutoresizingMaskIntoConstraints = NO;
-    iconHolder.backgroundColor = [accentColor colorWithAlphaComponent:0.16];
-    iconHolder.layer.cornerRadius = compact ? 21.0 : 28.0;
 
     UIImageView *imageView = [UIImageView new];
     imageView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -221,59 +215,43 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     imageView.image = [[self systemImageNamed:iconName] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 
     UILabel *fallbackLabel = [self labelWithText:fallbackText
-                                        fontSize:(compact ? 22.0 : 31.0)
+                                        fontSize:(compact ? 21.0 : 25.0)
                                           weight:UIFontWeightBold
                                            color:accentColor
                                        alignment:NSTextAlignmentCenter];
     fallbackLabel.hidden = (imageView.image != nil);
 
     UILabel *titleLabel = [self labelWithText:title
-                                     fontSize:(compact ? 19.0 : 25.0)
-                                       weight:UIFontWeightBold
+                                     fontSize:(compact ? 18.0 : 22.0)
+                                       weight:UIFontWeightHeavy
                                         color:accentColor
                                     alignment:NSTextAlignmentLeft];
-    UILabel *subtitleLabel = [self labelWithText:subtitle
-                                       fontSize:(compact ? 13.0 : 18.0)
-                                         weight:UIFontWeightMedium
-                                          color:[UIColor colorWithWhite:0.68 alpha:1.0]
-                                      alignment:NSTextAlignmentLeft];
 
-    UIStackView *textStack = [[UIStackView alloc] initWithArrangedSubviews:@[titleLabel, subtitleLabel]];
-    textStack.translatesAutoresizingMaskIntoConstraints = NO;
-    textStack.axis = UILayoutConstraintAxisVertical;
-    textStack.spacing = compact ? 3.0 : 7.0;
+    [row addSubview:imageView];
+    [row addSubview:fallbackLabel];
+    [row addSubview:titleLabel];
 
-    [row addSubview:iconHolder];
-    [iconHolder addSubview:imageView];
-    [iconHolder addSubview:fallbackLabel];
-    [row addSubview:textStack];
-
-    CGFloat rowHeight = compact ? 86.0 : 116.0;
-    CGFloat iconSize = compact ? 42.0 : 56.0;
-    CGFloat leading = compact ? 16.0 : 24.0;
-    CGFloat gap = compact ? 14.0 : 22.0;
+    CGFloat rowHeight = compact ? 50.0 : 60.0;
+    CGFloat iconSize = compact ? 24.0 : 28.0;
+    CGFloat leading = compact ? 78.0 : 92.0;
+    CGFloat gap = compact ? 12.0 : 14.0;
 
     [NSLayoutConstraint activateConstraints:@[
         [row.heightAnchor constraintEqualToConstant:rowHeight],
 
-        [iconHolder.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:leading],
-        [iconHolder.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        [iconHolder.widthAnchor constraintEqualToConstant:iconSize],
-        [iconHolder.heightAnchor constraintEqualToConstant:iconSize],
+        [imageView.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:leading],
+        [imageView.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [imageView.widthAnchor constraintEqualToConstant:iconSize],
+        [imageView.heightAnchor constraintEqualToConstant:iconSize],
 
-        [imageView.centerXAnchor constraintEqualToAnchor:iconHolder.centerXAnchor],
-        [imageView.centerYAnchor constraintEqualToAnchor:iconHolder.centerYAnchor],
-        [imageView.widthAnchor constraintEqualToAnchor:iconHolder.widthAnchor multiplier:0.72],
-        [imageView.heightAnchor constraintEqualToAnchor:iconHolder.heightAnchor multiplier:0.72],
+        [fallbackLabel.centerXAnchor constraintEqualToAnchor:imageView.centerXAnchor],
+        [fallbackLabel.centerYAnchor constraintEqualToAnchor:imageView.centerYAnchor],
+        [fallbackLabel.widthAnchor constraintEqualToConstant:iconSize + 10.0],
+        [fallbackLabel.heightAnchor constraintEqualToConstant:iconSize + 10.0],
 
-        [fallbackLabel.topAnchor constraintEqualToAnchor:iconHolder.topAnchor],
-        [fallbackLabel.leadingAnchor constraintEqualToAnchor:iconHolder.leadingAnchor],
-        [fallbackLabel.trailingAnchor constraintEqualToAnchor:iconHolder.trailingAnchor],
-        [fallbackLabel.bottomAnchor constraintEqualToAnchor:iconHolder.bottomAnchor],
-
-        [textStack.leadingAnchor constraintEqualToAnchor:iconHolder.trailingAnchor constant:gap],
-        [textStack.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-leading],
-        [textStack.centerYAnchor constraintEqualToAnchor:row.centerYAnchor]
+        [titleLabel.leadingAnchor constraintEqualToAnchor:imageView.trailingAnchor constant:gap],
+        [titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:row.trailingAnchor constant:-24.0],
+        [titleLabel.centerYAnchor constraintEqualToAnchor:row.centerYAnchor]
     ]];
 
     return row;
@@ -300,14 +278,17 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
         [view removeFromSuperview];
     }
 
-    BOOL landscape = CGRectGetWidth(rootView.bounds) > CGRectGetHeight(rootView.bounds);
-    BOOL compact = landscape || CGRectGetHeight(rootView.bounds) < 720.0;
-    CGFloat contentWidthMultiplier = landscape ? 0.92 : 0.88;
-    CGFloat maxContentWidth = landscape ? 760.0 : 460.0;
+    BOOL compact = CGRectGetHeight(rootView.bounds) < 620.0 || CGRectGetWidth(rootView.bounds) < 370.0;
 
-    UIView *backgroundView = [UIView new];
-    backgroundView.translatesAutoresizingMaskIntoConstraints = NO;
-    backgroundView.backgroundColor = [UIColor colorWithRed:0.03 green:0.04 blue:0.08 alpha:0.96];
+    UIView *panelView = [UIView new];
+    panelView.translatesAutoresizingMaskIntoConstraints = NO;
+    panelView.backgroundColor = [UIColor colorWithRed:0.055 green:0.055 blue:0.075 alpha:0.98];
+    panelView.layer.cornerRadius = compact ? 20.0 : 24.0;
+    panelView.layer.shadowColor = UIColor.blackColor.CGColor;
+    panelView.layer.shadowOpacity = 0.42;
+    panelView.layer.shadowRadius = 22.0;
+    panelView.layer.shadowOffset = CGSizeMake(0.0, 12.0);
+    panelView.clipsToBounds = NO;
 
     UIScrollView *scrollView = [UIScrollView new];
     scrollView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -315,18 +296,36 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     scrollView.showsVerticalScrollIndicator = NO;
     scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
 
-    UIView *contentView = [UIView new];
-    contentView.translatesAutoresizingMaskIntoConstraints = NO;
+    UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    closeButton.translatesAutoresizingMaskIntoConstraints = NO;
+    closeButton.backgroundColor = [UIColor colorWithWhite:0.88 alpha:1.0];
+    closeButton.layer.cornerRadius = compact ? 16.0 : 18.0;
+    closeButton.titleLabel.font = [UIFont systemFontOfSize:(compact ? 18.0 : 21.0) weight:UIFontWeightHeavy];
+    [closeButton setTitle:@"X" forState:UIControlStateNormal];
+    [closeButton setTitleColor:[UIColor colorWithRed:0.06 green:0.06 blue:0.08 alpha:1.0]
+                      forState:UIControlStateNormal];
+    [closeButton addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
+
+    UIImageView *topIconView = [UIImageView new];
+    topIconView.translatesAutoresizingMaskIntoConstraints = NO;
+    topIconView.contentMode = UIViewContentModeScaleAspectFit;
+    topIconView.tintColor = [UIColor colorWithWhite:0.68 alpha:1.0];
+    UIImage *logoImage = [self floatingIconImage];
+    if (logoImage) {
+        topIconView.image = [logoImage imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+    } else {
+        topIconView.image = [[self systemImageNamed:@"flame.fill"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
 
     UILabel *titleLabel = [self labelWithText:TolaMenuTitle
-                                     fontSize:(compact ? 42.0 : 54.0)
+                                     fontSize:(compact ? 26.0 : 32.0)
                                        weight:UIFontWeightHeavy
-                                        color:[self tolaBlue]
+                                        color:UIColor.whiteColor
                                     alignment:NSTextAlignmentCenter];
     UILabel *subtitleLabel = [self labelWithText:TolaMenuSubtitle
-                                        fontSize:(compact ? 20.0 : 26.0)
+                                        fontSize:(compact ? 18.0 : 22.0)
                                           weight:UIFontWeightBold
-                                           color:[UIColor colorWithWhite:0.68 alpha:1.0]
+                                           color:[UIColor colorWithWhite:0.58 alpha:1.0]
                                       alignment:NSTextAlignmentCenter];
 
     UIControl *telegram = [self menuRowWithTitle:@"Telegram"
@@ -344,7 +343,6 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                         action:@selector(openTikTok)
                                        compact:compact];
     tikTok.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.76];
-    tikTok.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
 
     UIControl *facebook = [self menuRowWithTitle:@"Facebook"
                                         subtitle:@"Follow our Facebook Page"
@@ -364,80 +362,78 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                      subtitle:@"Close this menu"
                                      iconName:@"xmark"
                                  fallbackText:@"X"
-                                  accentColor:[UIColor colorWithWhite:0.72 alpha:1.0]
+                                  accentColor:[UIColor colorWithWhite:0.74 alpha:1.0]
                                        action:@selector(closeMenu)
                                       compact:compact];
-    close.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.76];
-    close.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
+    close.backgroundColor = [UIColor colorWithWhite:0.10 alpha:0.82];
 
-    UIView *rowsView = nil;
-    if (landscape) {
-        UIStackView *firstRow = [self stackWithAxis:UILayoutConstraintAxisHorizontal
-                                           spacing:14.0
-                                            views:@[telegram, tikTok]];
-        UIStackView *secondRow = [self stackWithAxis:UILayoutConstraintAxisHorizontal
-                                            spacing:14.0
-                                             views:@[facebook, website]];
-        UIStackView *landscapeRows = [self stackWithAxis:UILayoutConstraintAxisVertical
-                                                spacing:14.0
-                                                 views:@[firstRow, secondRow, close]];
-        rowsView = landscapeRows;
-    } else {
-        UIStackView *portraitRows = [self stackWithAxis:UILayoutConstraintAxisVertical
-                                                spacing:(compact ? 14.0 : 20.0)
-                                                 views:@[telegram, tikTok, facebook, website, close]];
-        rowsView = portraitRows;
-    }
+    UIStackView *rowsView = [self stackWithAxis:UILayoutConstraintAxisVertical
+                                        spacing:(compact ? 12.0 : 16.0)
+                                         views:@[telegram, tikTok, facebook, website, close]];
 
-    [rootView addSubview:backgroundView];
-    [rootView addSubview:scrollView];
-    [scrollView addSubview:contentView];
-    [contentView addSubview:titleLabel];
-    [contentView addSubview:subtitleLabel];
-    [contentView addSubview:rowsView];
+    UIStackView *contentStack = [[UIStackView alloc] initWithArrangedSubviews:@[
+        topIconView,
+        titleLabel,
+        subtitleLabel,
+        rowsView
+    ]];
+    contentStack.translatesAutoresizingMaskIntoConstraints = NO;
+    contentStack.axis = UILayoutConstraintAxisVertical;
+    contentStack.alignment = UIStackViewAlignmentCenter;
+    contentStack.spacing = compact ? 12.0 : 18.0;
+    [contentStack setCustomSpacing:(compact ? 18.0 : 28.0) afterView:subtitleLabel];
 
-    self.menuView = backgroundView;
+    [rootView addSubview:panelView];
+    [panelView addSubview:scrollView];
+    [panelView addSubview:closeButton];
+    [scrollView addSubview:contentStack];
+
+    self.menuView = panelView;
 
     UILayoutGuide *safeArea = rootView.safeAreaLayoutGuide;
+    NSLayoutConstraint *panelWidth = [panelView.widthAnchor constraintEqualToConstant:(compact ? 360.0 : 430.0)];
+    panelWidth.priority = UILayoutPriorityDefaultHigh;
+    NSLayoutConstraint *panelHeight = [panelView.heightAnchor constraintEqualToConstant:(compact ? 430.0 : 560.0)];
+    panelHeight.priority = UILayoutPriorityDefaultHigh;
+
     [NSLayoutConstraint activateConstraints:@[
-        [backgroundView.topAnchor constraintEqualToAnchor:rootView.topAnchor],
-        [backgroundView.leadingAnchor constraintEqualToAnchor:rootView.leadingAnchor],
-        [backgroundView.trailingAnchor constraintEqualToAnchor:rootView.trailingAnchor],
-        [backgroundView.bottomAnchor constraintEqualToAnchor:rootView.bottomAnchor],
+        [panelView.centerXAnchor constraintEqualToAnchor:safeArea.centerXAnchor],
+        [panelView.centerYAnchor constraintEqualToAnchor:safeArea.centerYAnchor],
+        [panelView.leadingAnchor constraintGreaterThanOrEqualToAnchor:safeArea.leadingAnchor constant:14.0],
+        [panelView.trailingAnchor constraintLessThanOrEqualToAnchor:safeArea.trailingAnchor constant:-14.0],
+        [panelView.topAnchor constraintGreaterThanOrEqualToAnchor:safeArea.topAnchor constant:10.0],
+        [panelView.bottomAnchor constraintLessThanOrEqualToAnchor:safeArea.bottomAnchor constant:-10.0],
+        panelWidth,
+        panelHeight,
 
-        [scrollView.topAnchor constraintEqualToAnchor:safeArea.topAnchor],
-        [scrollView.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor],
-        [scrollView.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor],
-        [scrollView.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor],
+        [closeButton.topAnchor constraintEqualToAnchor:panelView.topAnchor constant:(compact ? 14.0 : 18.0)],
+        [closeButton.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor constant:(compact ? -14.0 : -18.0)],
+        [closeButton.widthAnchor constraintEqualToConstant:(compact ? 32.0 : 36.0)],
+        [closeButton.heightAnchor constraintEqualToConstant:(compact ? 32.0 : 36.0)],
 
-        [contentView.topAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.topAnchor],
-        [contentView.leadingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.leadingAnchor],
-        [contentView.trailingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.trailingAnchor],
-        [contentView.bottomAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.bottomAnchor],
-        [contentView.widthAnchor constraintEqualToAnchor:scrollView.frameLayoutGuide.widthAnchor],
-        [contentView.heightAnchor constraintGreaterThanOrEqualToAnchor:scrollView.frameLayoutGuide.heightAnchor],
+        [scrollView.topAnchor constraintEqualToAnchor:panelView.topAnchor],
+        [scrollView.leadingAnchor constraintEqualToAnchor:panelView.leadingAnchor],
+        [scrollView.trailingAnchor constraintEqualToAnchor:panelView.trailingAnchor],
+        [scrollView.bottomAnchor constraintEqualToAnchor:panelView.bottomAnchor],
 
-        [titleLabel.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:(compact ? 20.0 : 64.0)],
-        [titleLabel.centerXAnchor constraintEqualToAnchor:contentView.centerXAnchor],
-        [titleLabel.widthAnchor constraintLessThanOrEqualToConstant:maxContentWidth],
-        [titleLabel.widthAnchor constraintEqualToAnchor:contentView.widthAnchor multiplier:contentWidthMultiplier],
+        [contentStack.topAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.topAnchor constant:(compact ? 30.0 : 38.0)],
+        [contentStack.leadingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.leadingAnchor constant:(compact ? 32.0 : 34.0)],
+        [contentStack.trailingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.trailingAnchor constant:(compact ? -32.0 : -34.0)],
+        [contentStack.bottomAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.bottomAnchor constant:(compact ? -28.0 : -34.0)],
+        [contentStack.widthAnchor constraintEqualToAnchor:scrollView.frameLayoutGuide.widthAnchor constant:(compact ? -64.0 : -68.0)],
 
-        [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:(compact ? 4.0 : 12.0)],
-        [subtitleLabel.centerXAnchor constraintEqualToAnchor:contentView.centerXAnchor],
-        [subtitleLabel.widthAnchor constraintEqualToAnchor:titleLabel.widthAnchor],
-
-        [rowsView.topAnchor constraintEqualToAnchor:subtitleLabel.bottomAnchor constant:(compact ? 18.0 : 46.0)],
-        [rowsView.centerXAnchor constraintEqualToAnchor:contentView.centerXAnchor],
-        [rowsView.widthAnchor constraintEqualToAnchor:titleLabel.widthAnchor],
-        [rowsView.bottomAnchor constraintLessThanOrEqualToAnchor:contentView.bottomAnchor constant:-24.0],
-        [rowsView.centerYAnchor constraintLessThanOrEqualToAnchor:contentView.centerYAnchor constant:(landscape ? 46.0 : 120.0)]
+        [topIconView.widthAnchor constraintEqualToConstant:(compact ? 48.0 : 58.0)],
+        [topIconView.heightAnchor constraintEqualToConstant:(compact ? 48.0 : 58.0)],
+        [titleLabel.widthAnchor constraintEqualToAnchor:contentStack.widthAnchor],
+        [subtitleLabel.widthAnchor constraintEqualToAnchor:contentStack.widthAnchor],
+        [rowsView.widthAnchor constraintEqualToAnchor:contentStack.widthAnchor]
     ]];
 
-    backgroundView.alpha = 0.0;
-    rowsView.transform = CGAffineTransformMakeScale(0.96, 0.96);
+    panelView.alpha = 0.0;
+    panelView.transform = CGAffineTransformMakeScale(0.94, 0.94);
     [UIView animateWithDuration:0.2 animations:^{
-        backgroundView.alpha = 1.0;
-        rowsView.transform = CGAffineTransformIdentity;
+        panelView.alpha = 1.0;
+        panelView.transform = CGAffineTransformIdentity;
     }];
 }
 

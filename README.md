@@ -2,9 +2,12 @@
 
 Minimal iOS dylib starter for authorized IPA testing.
 
-When loaded, it shows a dark responsive menu titled `TolaiOS` with Telegram,
-TikTok, Facebook, Website, and Close buttons. Closing the menu leaves a floating
-icon button that opens the menu again.
+When loaded, it shows a centered dark modal menu titled `TolaiOS` with Telegram,
+TikTok, Facebook, Website, and Close buttons. The app stays visible behind the
+menu. Closing the menu leaves a floating icon button that opens the menu again.
+
+The menu keeps roughly the same modal size in portrait and landscape. On short
+screens, the inside of the modal scrolls instead of becoming full-screen.
 
 Edit these values at the top of `TolaDylib/Tola.m` before building:
 
