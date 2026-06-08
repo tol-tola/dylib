@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <mach-o/dyld.h>
+#include <math.h>
 
 static NSString * const TolaMenuTitle = @"TolaiOS";
 static NSString * const TolaMenuSubtitle = @"Unknown Developer";
@@ -9,6 +10,38 @@ static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@tola.wxw";
 static NSString * const TolaFacebookURL = @"https://www.facebook.com/tolawxw";
 static NSString * const TolaWebsiteURL = @"https://tolaone.com";
 static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
+
+static CGFloat TolaDistance(CGPoint a, CGPoint b) {
+    CGFloat dx = a.x - b.x;
+    CGFloat dy = a.y - b.y;
+    return sqrt(dx * dx + dy * dy);
+}
+
+static CGFloat TolaDistancePointToSegment(CGPoint p, CGPoint a, CGPoint b) {
+    CGFloat dx = b.x - a.x;
+    CGFloat dy = b.y - a.y;
+    CGFloat lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared <= 0.0001) {
+        return TolaDistance(p, a);
+    }
+
+    CGFloat t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared;
+    t = MIN(MAX(t, 0.0), 1.0);
+    CGPoint projection = CGPointMake(a.x + t * dx, a.y + t * dy);
+    return TolaDistance(p, projection);
+}
+
+static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFromTo) {
+    CGFloat dx = to.x - from.x;
+    CGFloat dy = to.y - from.y;
+    CGFloat length = sqrt(dx * dx + dy * dy);
+    if (length <= 0.0001) {
+        return from;
+    }
+
+    return CGPointMake(to.x - (dx / length) * distanceFromTo,
+                       to.y - (dy / length) * distanceFromTo);
+}
 
 @interface TolaPassthroughWindow : UIWindow
 @end
@@ -25,13 +58,33 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
 @end
 
+@interface TolaPoolBall : NSObject
+@property (nonatomic, assign) CGPoint center;
+@property (nonatomic, assign) CGFloat radius;
+@property (nonatomic, assign) CGFloat brightness;
+@property (nonatomic, assign) CGFloat saturation;
+@property (nonatomic, assign) BOOL cueBall;
+@end
+
+@implementation TolaPoolBall
+@end
+
+@interface TolaPoolPrediction : NSObject
+@property (nonatomic, assign) CGPoint start;
+@property (nonatomic, assign) CGPoint end;
+@property (nonatomic, strong) UIColor *color;
+@property (nonatomic, assign) CGFloat width;
+@end
+
+@implementation TolaPoolPrediction
+@end
+
 @interface TolaLineOverlayView : UIView
-@property (nonatomic, assign) CGPoint cuePoint;
-@property (nonatomic, assign) CGPoint hitPoint;
-@property (nonatomic, assign) CGPoint pocketPoint;
-@property (nonatomic, assign) CGPoint topBankPoint;
-@property (nonatomic, assign) CGPoint bottomBankPoint;
-@property (nonatomic, assign) NSInteger activeHandleIndex;
+@property (nonatomic, strong) NSArray<TolaPoolBall *> *balls;
+@property (nonatomic, strong) NSArray<TolaPoolPrediction *> *predictions;
+@property (nonatomic, strong) NSArray<NSValue *> *greenPockets;
+@property (nonatomic, assign) CGRect detectedTableRect;
+@property (nonatomic, copy) NSString *statusText;
 @end
 
 @implementation TolaLineOverlayView
@@ -40,14 +93,12 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = UIColor.clearColor;
-        self.userInteractionEnabled = YES;
+        self.userInteractionEnabled = NO;
         self.opaque = NO;
-        self.activeHandleIndex = -1;
-        self.cuePoint = CGPointMake(0.30, 0.70);
-        self.hitPoint = CGPointMake(0.58, 0.46);
-        self.pocketPoint = CGPointMake(0.96, 0.70);
-        self.topBankPoint = CGPointMake(0.40, 0.05);
-        self.bottomBankPoint = CGPointMake(0.46, 0.92);
+        self.balls = @[];
+        self.predictions = @[];
+        self.greenPockets = @[];
+        self.statusText = @"Scanning...";
     }
     return self;
 }
@@ -55,138 +106,6 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 - (void)layoutSubviews {
     [super layoutSubviews];
     [self setNeedsDisplay];
-}
-
-- (CGPoint)pointWithX:(CGFloat)x y:(CGFloat)y rect:(CGRect)rect {
-    return CGPointMake(CGRectGetMinX(rect) + CGRectGetWidth(rect) * x,
-                       CGRectGetMinY(rect) + CGRectGetHeight(rect) * y);
-}
-
-- (CGRect)tableRect {
-    return CGRectInset(self.bounds, 2.0, 2.0);
-}
-
-- (CGPoint)screenPointForNormalizedPoint:(CGPoint)normalizedPoint {
-    CGRect tableRect = [self tableRect];
-    return [self pointWithX:normalizedPoint.x y:normalizedPoint.y rect:tableRect];
-}
-
-- (CGPoint)normalizedPointForScreenPoint:(CGPoint)screenPoint {
-    CGRect tableRect = [self tableRect];
-    CGFloat x = (screenPoint.x - CGRectGetMinX(tableRect)) / MAX(CGRectGetWidth(tableRect), 1.0);
-    CGFloat y = (screenPoint.y - CGRectGetMinY(tableRect)) / MAX(CGRectGetHeight(tableRect), 1.0);
-    x = MIN(MAX(x, 0.0), 1.0);
-    y = MIN(MAX(y, 0.0), 1.0);
-    return CGPointMake(x, y);
-}
-
-- (CGPoint)handlePointAtIndex:(NSInteger)index {
-    switch (index) {
-        case 0:
-            return [self screenPointForNormalizedPoint:self.cuePoint];
-        case 1:
-            return [self screenPointForNormalizedPoint:self.hitPoint];
-        case 2:
-            return [self screenPointForNormalizedPoint:self.pocketPoint];
-        case 3:
-            return [self screenPointForNormalizedPoint:self.topBankPoint];
-        case 4:
-            return [self screenPointForNormalizedPoint:self.bottomBankPoint];
-        default:
-            return CGPointZero;
-    }
-}
-
-- (void)setNormalizedPoint:(CGPoint)point forHandleAtIndex:(NSInteger)index {
-    switch (index) {
-        case 0:
-            self.cuePoint = point;
-            break;
-        case 1:
-            self.hitPoint = point;
-            break;
-        case 2:
-            self.pocketPoint = point;
-            break;
-        case 3:
-            self.topBankPoint = point;
-            break;
-        case 4:
-            self.bottomBankPoint = point;
-            break;
-        default:
-            break;
-    }
-}
-
-- (UIColor *)colorForHandleAtIndex:(NSInteger)index {
-    switch (index) {
-        case 0:
-            return UIColor.whiteColor;
-        case 1:
-            return [UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0];
-        case 2:
-            return [UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0];
-        case 3:
-            return [UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0];
-        case 4:
-            return [UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0];
-        default:
-            return UIColor.whiteColor;
-    }
-}
-
-- (NSInteger)nearestHandleIndexForPoint:(CGPoint)point maximumDistance:(CGFloat)maximumDistance {
-    NSInteger nearestIndex = -1;
-    CGFloat nearestDistanceSquared = maximumDistance * maximumDistance;
-
-    for (NSInteger index = 0; index < 5; index++) {
-        CGPoint handlePoint = [self handlePointAtIndex:index];
-        CGFloat dx = handlePoint.x - point.x;
-        CGFloat dy = handlePoint.y - point.y;
-        CGFloat distanceSquared = dx * dx + dy * dy;
-        if (distanceSquared <= nearestDistanceSquared) {
-            nearestDistanceSquared = distanceSquared;
-            nearestIndex = index;
-        }
-    }
-
-    return nearestIndex;
-}
-
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    if (self.hidden || self.alpha < 0.01 || !self.userInteractionEnabled) {
-        return nil;
-    }
-
-    NSInteger handleIndex = [self nearestHandleIndexForPoint:point maximumDistance:34.0];
-    return handleIndex >= 0 ? self : nil;
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    UITouch *touch = touches.anyObject;
-    CGPoint point = [touch locationInView:self];
-    self.activeHandleIndex = [self nearestHandleIndexForPoint:point maximumDistance:44.0];
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    if (self.activeHandleIndex < 0) {
-        return;
-    }
-
-    UITouch *touch = touches.anyObject;
-    CGPoint point = [touch locationInView:self];
-    [self setNormalizedPoint:[self normalizedPointForScreenPoint:point]
-            forHandleAtIndex:self.activeHandleIndex];
-    [self setNeedsDisplay];
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    self.activeHandleIndex = -1;
-}
-
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    self.activeHandleIndex = -1;
 }
 
 - (void)drawGuideFrom:(CGPoint)start
@@ -213,10 +132,10 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 }
 
 - (void)drawDotAt:(CGPoint)point color:(UIColor *)color radius:(CGFloat)radius {
-    UIBezierPath *ringPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(point.x - radius - 7.0,
-                                                                               point.y - radius - 7.0,
-                                                                               (radius + 7.0) * 2.0,
-                                                                               (radius + 7.0) * 2.0)];
+    UIBezierPath *ringPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(point.x - radius - 5.0,
+                                                                               point.y - radius - 5.0,
+                                                                               (radius + 5.0) * 2.0,
+                                                                               (radius + 5.0) * 2.0)];
     [[UIColor blackColor] setFill];
     [ringPath fill];
 
@@ -232,21 +151,45 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 }
 
 - (void)drawRect:(CGRect)rect {
-    CGPoint cue = [self handlePointAtIndex:0];
-    CGPoint hit = [self handlePointAtIndex:1];
-    CGPoint pocket = [self handlePointAtIndex:2];
-    CGPoint topBank = [self handlePointAtIndex:3];
-    CGPoint bottomBank = [self handlePointAtIndex:4];
+    if (!CGRectIsEmpty(self.detectedTableRect)) {
+        UIBezierPath *tablePath = [UIBezierPath bezierPathWithRoundedRect:self.detectedTableRect cornerRadius:10.0];
+        [[UIColor colorWithRed:0.1 green:1.0 blue:0.45 alpha:0.13] setStroke];
+        tablePath.lineWidth = 1.0;
+        [tablePath stroke];
+    }
 
-    [self drawGuideFrom:cue to:hit color:[UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0] width:2.6];
-    [self drawGuideFrom:hit to:pocket color:[UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0] width:2.2];
-    [self drawGuideFrom:hit to:topBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] width:2.0];
-    [self drawGuideFrom:hit to:bottomBank color:[UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0] width:2.0];
+    for (TolaPoolPrediction *prediction in self.predictions) {
+        [self drawGuideFrom:prediction.start
+                         to:prediction.end
+                      color:prediction.color
+                      width:prediction.width];
+    }
 
-    for (NSInteger index = 0; index < 5; index++) {
-        [self drawDotAt:[self handlePointAtIndex:index]
-                  color:[self colorForHandleAtIndex:index]
-                 radius:(index == self.activeHandleIndex ? 7.5 : 6.0)];
+    for (NSValue *pocketValue in self.greenPockets) {
+        CGPoint pocket = pocketValue.CGPointValue;
+        UIBezierPath *pocketPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(pocket.x - 18.0,
+                                                                                    pocket.y - 18.0,
+                                                                                    36.0,
+                                                                                    36.0)];
+        [[UIColor colorWithRed:0.1 green:1.0 blue:0.35 alpha:0.35] setFill];
+        [pocketPath fill];
+        [[UIColor colorWithRed:0.1 green:1.0 blue:0.35 alpha:0.95] setStroke];
+        pocketPath.lineWidth = 3.0;
+        [pocketPath stroke];
+    }
+
+    for (TolaPoolBall *ball in self.balls) {
+        UIColor *color = ball.cueBall ? UIColor.whiteColor : [UIColor colorWithRed:1.0 green:0.88 blue:0.18 alpha:1.0];
+        [self drawDotAt:ball.center color:color radius:MAX(ball.radius * 0.45, 4.0)];
+    }
+
+    if (self.statusText.length > 0) {
+        NSDictionary *attributes = @{
+            NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightBold],
+            NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.82]
+        };
+        [self.statusText drawAtPoint:CGPointMake(14.0, CGRectGetMaxY(self.bounds) - 28.0)
+                      withAttributes:attributes];
     }
 }
 
@@ -257,6 +200,7 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 @property (nonatomic, strong) UIView *menuView;
 @property (nonatomic, strong) UIButton *floatButton;
 @property (nonatomic, strong) TolaLineOverlayView *lineOverlayView;
+@property (nonatomic, strong) NSTimer *visionTimer;
 @property (nonatomic, assign) BOOL lineESPEnabled;
 @end
 
@@ -495,10 +439,485 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     return stack;
 }
 
+- (UIWindow *)gameWindowForVision {
+    NSArray<UIWindow *> *windows = UIApplication.sharedApplication.windows;
+    for (UIWindow *window in windows.reverseObjectEnumerator) {
+        if (window == self.overlayWindow || window.hidden || window.alpha < 0.01) {
+            continue;
+        }
+
+        if (window.windowLevel <= UIWindowLevelNormal + 1.0) {
+            return window;
+        }
+    }
+
+    return nil;
+}
+
+- (UIImage *)captureGameWindow:(UIWindow *)window sourceSize:(CGSize *)sourceSize {
+    if (!window) {
+        return nil;
+    }
+
+    CGSize windowSize = window.bounds.size;
+    if (windowSize.width <= 1.0 || windowSize.height <= 1.0) {
+        return nil;
+    }
+
+    if (sourceSize) {
+        *sourceSize = windowSize;
+    }
+
+    CGFloat maxAnalysisWidth = 560.0;
+    CGFloat scale = MIN(1.0, maxAnalysisWidth / MAX(windowSize.width, 1.0));
+    CGSize analysisSize = CGSizeMake(MAX(1.0, floor(windowSize.width * scale)),
+                                     MAX(1.0, floor(windowSize.height * scale)));
+
+    UIGraphicsBeginImageContextWithOptions(analysisSize, YES, 1.0);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    CGContextScaleCTM(context, scale, scale);
+    [window drawViewHierarchyInRect:window.bounds afterScreenUpdates:NO];
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    return image;
+}
+
+- (BOOL)isGreenFeltWithR:(UInt8)r g:(UInt8)g b:(UInt8)b {
+    return g > 55 && g > r * 1.16 && g > b * 1.08 && (g - r) > 18;
+}
+
+- (BOOL)isBallCandidateWithR:(UInt8)r g:(UInt8)g b:(UInt8)b {
+    CGFloat maxValue = MAX(MAX(r, g), b) / 255.0;
+    CGFloat minValue = MIN(MIN(r, g), b) / 255.0;
+    CGFloat saturation = maxValue <= 0.01 ? 0.0 : (maxValue - minValue) / maxValue;
+    CGFloat brightness = (r + g + b) / (255.0 * 3.0);
+    BOOL brightWhite = brightness > 0.68 && saturation < 0.24;
+    BOOL coloredBall = brightness > 0.24 && saturation > 0.18;
+    return brightWhite || coloredBall;
+}
+
+- (TolaPoolPrediction *)predictionFrom:(CGPoint)start
+                                    to:(CGPoint)end
+                                 color:(UIColor *)color
+                                 width:(CGFloat)width {
+    TolaPoolPrediction *prediction = [TolaPoolPrediction new];
+    prediction.start = start;
+    prediction.end = end;
+    prediction.color = color;
+    prediction.width = width;
+    return prediction;
+}
+
+- (NSArray<NSValue *> *)pocketsForTableRect:(CGRect)tableRect {
+    if (CGRectIsEmpty(tableRect)) {
+        return @[];
+    }
+
+    CGFloat minX = CGRectGetMinX(tableRect);
+    CGFloat midX = CGRectGetMidX(tableRect);
+    CGFloat maxX = CGRectGetMaxX(tableRect);
+    CGFloat minY = CGRectGetMinY(tableRect);
+    CGFloat maxY = CGRectGetMaxY(tableRect);
+
+    return @[
+        [NSValue valueWithCGPoint:CGPointMake(minX, minY)],
+        [NSValue valueWithCGPoint:CGPointMake(midX, minY)],
+        [NSValue valueWithCGPoint:CGPointMake(maxX, minY)],
+        [NSValue valueWithCGPoint:CGPointMake(minX, maxY)],
+        [NSValue valueWithCGPoint:CGPointMake(midX, maxY)],
+        [NSValue valueWithCGPoint:CGPointMake(maxX, maxY)]
+    ];
+}
+
+- (BOOL)isPathClearFrom:(CGPoint)start
+                     to:(CGPoint)end
+                  balls:(NSArray<TolaPoolBall *> *)balls
+                 ignore:(NSSet<TolaPoolBall *> *)ignoredBalls
+              clearance:(CGFloat)clearance {
+    for (TolaPoolBall *ball in balls) {
+        if ([ignoredBalls containsObject:ball]) {
+            continue;
+        }
+
+        CGFloat distance = TolaDistancePointToSegment(ball.center, start, end);
+        if (distance < ball.radius + clearance) {
+            return NO;
+        }
+    }
+
+    return YES;
+}
+
+- (NSArray<TolaPoolBall *> *)mergeCloseBalls:(NSArray<TolaPoolBall *> *)balls {
+    NSMutableArray<TolaPoolBall *> *merged = [NSMutableArray array];
+
+    for (TolaPoolBall *ball in balls) {
+        BOOL duplicate = NO;
+        for (TolaPoolBall *existing in merged) {
+            CGFloat threshold = MAX(existing.radius, ball.radius) * 1.25 + 5.0;
+            if (TolaDistance(existing.center, ball.center) < threshold) {
+                duplicate = YES;
+                if (ball.radius > existing.radius) {
+                    existing.center = ball.center;
+                    existing.radius = ball.radius;
+                    existing.brightness = ball.brightness;
+                    existing.saturation = ball.saturation;
+                }
+                break;
+            }
+        }
+
+        if (!duplicate) {
+            [merged addObject:ball];
+        }
+    }
+
+    return merged;
+}
+
+- (NSDictionary *)predictionForBalls:(NSArray<TolaPoolBall *> *)balls tableRect:(CGRect)tableRect {
+    if (balls.count < 2 || CGRectIsEmpty(tableRect)) {
+        return @{
+            @"balls": @[],
+            @"predictions": @[],
+            @"pockets": @[],
+            @"status": @"Auto ESP: scanning balls"
+        };
+    }
+
+    TolaPoolBall *cueBall = nil;
+    CGFloat bestCueScore = -CGFLOAT_MAX;
+    for (TolaPoolBall *ball in balls) {
+        CGFloat leftBonus = 1.0 - ((ball.center.x - CGRectGetMinX(tableRect)) / MAX(CGRectGetWidth(tableRect), 1.0));
+        CGFloat cueScore = ball.brightness * 2.3 - ball.saturation * 1.2 + leftBonus * 0.25;
+        if (cueScore > bestCueScore) {
+            bestCueScore = cueScore;
+            cueBall = ball;
+        }
+    }
+
+    cueBall.cueBall = YES;
+
+    NSArray<NSValue *> *pockets = [self pocketsForTableRect:tableRect];
+    NSMutableArray<NSDictionary *> *candidates = [NSMutableArray array];
+
+    for (TolaPoolBall *objectBall in balls) {
+        if (objectBall == cueBall) {
+            continue;
+        }
+
+        for (NSValue *pocketValue in pockets) {
+            CGPoint pocket = pocketValue.CGPointValue;
+            CGFloat objectToPocketDistance = TolaDistance(objectBall.center, pocket);
+            if (objectToPocketDistance < objectBall.radius * 2.0) {
+                continue;
+            }
+
+            CGPoint ghostPoint = TolaPointAlongLine(objectBall.center,
+                                                   pocket,
+                                                   (cueBall.radius + objectBall.radius) * 1.08);
+
+            NSSet *objectPocketIgnore = [NSSet setWithObjects:objectBall, nil];
+            if (![self isPathClearFrom:objectBall.center
+                                    to:pocket
+                                 balls:balls
+                                ignore:objectPocketIgnore
+                             clearance:objectBall.radius * 0.25]) {
+                continue;
+            }
+
+            NSSet *cueObjectIgnore = [NSSet setWithObjects:cueBall, objectBall, nil];
+            if (![self isPathClearFrom:cueBall.center
+                                    to:ghostPoint
+                                 balls:balls
+                                ignore:cueObjectIgnore
+                             clearance:cueBall.radius * 0.25]) {
+                continue;
+            }
+
+            CGFloat cueToGhostDistance = TolaDistance(cueBall.center, ghostPoint);
+            CGFloat score = cueToGhostDistance + objectToPocketDistance;
+            [candidates addObject:@{
+                @"score": @(score),
+                @"object": objectBall,
+                @"ghost": [NSValue valueWithCGPoint:ghostPoint],
+                @"pocket": [NSValue valueWithCGPoint:pocket]
+            }];
+        }
+    }
+
+    [candidates sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [a[@"score"] compare:b[@"score"]];
+    }];
+
+    NSMutableArray<TolaPoolPrediction *> *predictions = [NSMutableArray array];
+    NSMutableArray<TolaPoolBall *> *shownBalls = [NSMutableArray arrayWithObject:cueBall];
+    NSMutableArray<NSValue *> *greenPockets = [NSMutableArray array];
+    NSInteger maxCandidates = MIN((NSInteger)candidates.count, 3);
+
+    for (NSInteger index = 0; index < maxCandidates; index++) {
+        NSDictionary *candidate = candidates[index];
+        TolaPoolBall *objectBall = candidate[@"object"];
+        CGPoint ghostPoint = [candidate[@"ghost"] CGPointValue];
+        CGPoint pocket = [candidate[@"pocket"] CGPointValue];
+
+        if (![shownBalls containsObject:objectBall]) {
+            [shownBalls addObject:objectBall];
+        }
+        [greenPockets addObject:[NSValue valueWithCGPoint:pocket]];
+
+        UIColor *cueLineColor = index == 0
+            ? [UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0]
+            : [UIColor colorWithRed:1.0 green:0.48 blue:0.18 alpha:1.0];
+        UIColor *pocketLineColor = index == 0
+            ? [UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0]
+            : [UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0];
+
+        [predictions addObject:[self predictionFrom:cueBall.center
+                                                   to:ghostPoint
+                                                color:cueLineColor
+                                                width:(index == 0 ? 3.0 : 2.0)]];
+        [predictions addObject:[self predictionFrom:objectBall.center
+                                                   to:pocket
+                                                color:pocketLineColor
+                                                width:(index == 0 ? 2.6 : 1.9)]];
+
+        CGFloat dx = objectBall.center.x - ghostPoint.x;
+        CGFloat dy = objectBall.center.y - ghostPoint.y;
+        CGPoint cueStop = CGPointMake(objectBall.center.x - dy * 0.32,
+                                      objectBall.center.y + dx * 0.32);
+        [predictions addObject:[self predictionFrom:objectBall.center
+                                                   to:cueStop
+                                                color:[UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:0.9]
+                                                width:1.6]];
+    }
+
+    NSString *status = maxCandidates > 0
+        ? [NSString stringWithFormat:@"Auto ESP: %ld clear shot%@", (long)maxCandidates, maxCandidates == 1 ? @"" : @"s"]
+        : @"Auto ESP: no clear pocket path";
+
+    return @{
+        @"balls": shownBalls,
+        @"predictions": predictions,
+        @"pockets": greenPockets,
+        @"status": status
+    };
+}
+
+- (NSDictionary *)analyzePoolImage:(UIImage *)image sourceSize:(CGSize)sourceSize {
+    CGImageRef cgImage = image.CGImage;
+    if (!cgImage) {
+        return nil;
+    }
+
+    size_t width = CGImageGetWidth(cgImage);
+    size_t height = CGImageGetHeight(cgImage);
+    if (width < 20 || height < 20) {
+        return nil;
+    }
+
+    size_t bytesPerPixel = 4;
+    size_t bytesPerRow = width * bytesPerPixel;
+    UInt8 *data = calloc(height * bytesPerRow, sizeof(UInt8));
+    if (!data) {
+        return nil;
+    }
+
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(data,
+                                                 width,
+                                                 height,
+                                                 8,
+                                                 bytesPerRow,
+                                                 colorSpace,
+                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(colorSpace);
+
+    if (!context) {
+        free(data);
+        return nil;
+    }
+
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
+    CGContextRelease(context);
+
+    NSInteger greenCount = 0;
+    NSInteger minGreenX = (NSInteger)width;
+    NSInteger minGreenY = (NSInteger)height;
+    NSInteger maxGreenX = 0;
+    NSInteger maxGreenY = 0;
+
+    for (NSInteger y = 0; y < (NSInteger)height; y++) {
+        for (NSInteger x = 0; x < (NSInteger)width; x++) {
+            NSInteger offset = (y * (NSInteger)width + x) * 4;
+            UInt8 r = data[offset];
+            UInt8 g = data[offset + 1];
+            UInt8 b = data[offset + 2];
+
+            if ([self isGreenFeltWithR:r g:g b:b]) {
+                greenCount++;
+                minGreenX = MIN(minGreenX, x);
+                minGreenY = MIN(minGreenY, y);
+                maxGreenX = MAX(maxGreenX, x);
+                maxGreenY = MAX(maxGreenY, y);
+            }
+        }
+    }
+
+    if (greenCount < 800) {
+        free(data);
+        return nil;
+    }
+
+    CGFloat scaleX = sourceSize.width / MAX((CGFloat)width, 1.0);
+    CGFloat scaleY = sourceSize.height / MAX((CGFloat)height, 1.0);
+    CGRect tableRect = CGRectMake(minGreenX * scaleX,
+                                  minGreenY * scaleY,
+                                  MAX(1, maxGreenX - minGreenX) * scaleX,
+                                  MAX(1, maxGreenY - minGreenY) * scaleY);
+
+    NSInteger pixelCount = (NSInteger)(width * height);
+    UInt8 *mask = calloc(pixelCount, sizeof(UInt8));
+    UInt8 *visited = calloc(pixelCount, sizeof(UInt8));
+    int *stack = malloc(sizeof(int) * pixelCount);
+
+    if (!mask || !visited || !stack) {
+        free(data);
+        free(mask);
+        free(visited);
+        free(stack);
+        return nil;
+    }
+
+    NSInteger insetX = MAX(3, (maxGreenX - minGreenX) / 90);
+    NSInteger insetY = MAX(3, (maxGreenY - minGreenY) / 70);
+
+    for (NSInteger y = minGreenY + insetY; y <= maxGreenY - insetY; y++) {
+        for (NSInteger x = minGreenX + insetX; x <= maxGreenX - insetX; x++) {
+            NSInteger offset = (y * (NSInteger)width + x) * 4;
+            UInt8 r = data[offset];
+            UInt8 g = data[offset + 1];
+            UInt8 b = data[offset + 2];
+            BOOL green = [self isGreenFeltWithR:r g:g b:b];
+            BOOL ballCandidate = [self isBallCandidateWithR:r g:g b:b];
+            if (!green && ballCandidate) {
+                mask[y * (NSInteger)width + x] = 1;
+            }
+        }
+    }
+
+    NSMutableArray<TolaPoolBall *> *detectedBalls = [NSMutableArray array];
+
+    for (NSInteger y = minGreenY + insetY; y <= maxGreenY - insetY; y++) {
+        for (NSInteger x = minGreenX + insetX; x <= maxGreenX - insetX; x++) {
+            NSInteger startIndex = y * (NSInteger)width + x;
+            if (!mask[startIndex] || visited[startIndex]) {
+                continue;
+            }
+
+            NSInteger top = 0;
+            stack[top++] = (int)startIndex;
+            visited[startIndex] = 1;
+
+            NSInteger area = 0;
+            NSInteger minX = x;
+            NSInteger minY = y;
+            NSInteger maxX = x;
+            NSInteger maxY = y;
+            CGFloat sumX = 0.0;
+            CGFloat sumY = 0.0;
+            CGFloat sumBrightness = 0.0;
+            CGFloat sumSaturation = 0.0;
+
+            while (top > 0) {
+                NSInteger index = stack[--top];
+                NSInteger px = index % (NSInteger)width;
+                NSInteger py = index / (NSInteger)width;
+
+                NSInteger offset = index * 4;
+                UInt8 r = data[offset];
+                UInt8 g = data[offset + 1];
+                UInt8 b = data[offset + 2];
+                CGFloat maxValue = MAX(MAX(r, g), b) / 255.0;
+                CGFloat minValue = MIN(MIN(r, g), b) / 255.0;
+                CGFloat saturation = maxValue <= 0.01 ? 0.0 : (maxValue - minValue) / maxValue;
+                CGFloat brightness = (r + g + b) / (255.0 * 3.0);
+
+                area++;
+                sumX += px;
+                sumY += py;
+                sumBrightness += brightness;
+                sumSaturation += saturation;
+                minX = MIN(minX, px);
+                minY = MIN(minY, py);
+                maxX = MAX(maxX, px);
+                maxY = MAX(maxY, py);
+
+                NSInteger neighbors[4] = {
+                    index - 1,
+                    index + 1,
+                    index - (NSInteger)width,
+                    index + (NSInteger)width
+                };
+
+                for (NSInteger neighborIndex = 0; neighborIndex < 4; neighborIndex++) {
+                    NSInteger next = neighbors[neighborIndex];
+                    if (next < 0 || next >= pixelCount || visited[next] || !mask[next]) {
+                        continue;
+                    }
+
+                    NSInteger nx = next % (NSInteger)width;
+                    NSInteger ny = next / (NSInteger)width;
+                    if (nx < minGreenX + insetX || nx > maxGreenX - insetX ||
+                        ny < minGreenY + insetY || ny > maxGreenY - insetY) {
+                        continue;
+                    }
+
+                    visited[next] = 1;
+                    stack[top++] = (int)next;
+                }
+            }
+
+            NSInteger componentWidth = maxX - minX + 1;
+            NSInteger componentHeight = maxY - minY + 1;
+            CGFloat ratio = (CGFloat)MAX(componentWidth, componentHeight) / MAX((CGFloat)MIN(componentWidth, componentHeight), 1.0);
+
+            if (area < 12 || area > 900 ||
+                componentWidth < 4 || componentHeight < 4 ||
+                componentWidth > 36 || componentHeight > 36 ||
+                ratio > 2.25) {
+                continue;
+            }
+
+            TolaPoolBall *ball = [TolaPoolBall new];
+            ball.center = CGPointMake((sumX / area) * scaleX, (sumY / area) * scaleY);
+            ball.radius = MAX(componentWidth * scaleX, componentHeight * scaleY) / 2.0;
+            ball.brightness = sumBrightness / area;
+            ball.saturation = sumSaturation / area;
+            [detectedBalls addObject:ball];
+        }
+    }
+
+    free(data);
+    free(mask);
+    free(visited);
+    free(stack);
+
+    NSArray<TolaPoolBall *> *balls = [self mergeCloseBalls:detectedBalls];
+    NSDictionary *prediction = [self predictionForBalls:balls tableRect:tableRect];
+
+    NSMutableDictionary *result = [NSMutableDictionary dictionaryWithDictionary:prediction];
+    result[@"table"] = [NSValue valueWithCGRect:tableRect];
+    return result;
+}
+
 - (void)updateLineESPOverlay {
     UIView *rootView = self.overlayWindow.rootViewController.view;
 
     if (!self.lineESPEnabled) {
+        [self.visionTimer invalidate];
+        self.visionTimer = nil;
         [self.lineOverlayView removeFromSuperview];
         self.lineOverlayView = nil;
         return;
@@ -522,9 +941,52 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     ]];
 }
 
+- (void)refreshAutoLineESP {
+    if (!self.lineESPEnabled || !self.lineOverlayView) {
+        return;
+    }
+
+    UIWindow *gameWindow = [self gameWindowForVision];
+    CGSize sourceSize = CGSizeZero;
+    UIImage *image = [self captureGameWindow:gameWindow sourceSize:&sourceSize];
+    NSDictionary *result = image ? [self analyzePoolImage:image sourceSize:sourceSize] : nil;
+
+    if (!result) {
+        self.lineOverlayView.balls = @[];
+        self.lineOverlayView.predictions = @[];
+        self.lineOverlayView.greenPockets = @[];
+        self.lineOverlayView.detectedTableRect = CGRectZero;
+        self.lineOverlayView.statusText = @"Auto ESP: cannot see table";
+        [self.lineOverlayView setNeedsDisplay];
+        return;
+    }
+
+    self.lineOverlayView.balls = result[@"balls"] ?: @[];
+    self.lineOverlayView.predictions = result[@"predictions"] ?: @[];
+    self.lineOverlayView.greenPockets = result[@"pockets"] ?: @[];
+    self.lineOverlayView.detectedTableRect = [result[@"table"] CGRectValue];
+    self.lineOverlayView.statusText = result[@"status"] ?: @"Auto ESP";
+    [self.lineOverlayView setNeedsDisplay];
+}
+
+- (void)startVisionTimerIfNeeded {
+    if (!self.lineESPEnabled || self.visionTimer) {
+        return;
+    }
+
+    [self refreshAutoLineESP];
+    self.visionTimer = [NSTimer timerWithTimeInterval:0.45
+                                               target:self
+                                             selector:@selector(refreshAutoLineESP)
+                                             userInfo:nil
+                                              repeats:YES];
+    [NSRunLoop.mainRunLoop addTimer:self.visionTimer forMode:NSRunLoopCommonModes];
+}
+
 - (void)toggleLineESP {
     self.lineESPEnabled = !self.lineESPEnabled;
     [self updateLineESPOverlay];
+    [self startVisionTimerIfNeeded];
     [self showMenu];
 }
 
@@ -594,7 +1056,7 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                       alignment:NSTextAlignmentCenter];
 
     UIControl *lineESP = [self menuRowWithTitle:(self.lineESPEnabled ? @"Line ESP: ON" : @"Line ESP: OFF")
-                                       subtitle:@"Drag dots to adjust"
+                                       subtitle:@"Auto vision prediction"
                                        iconName:(self.lineESPEnabled ? @"eye.fill" : @"eye.slash.fill")
                                    fallbackText:@"ESP"
                                     accentColor:(self.lineESPEnabled ? [UIColor colorWithRed:0.16 green:0.86 blue:0.35 alpha:1.0] : [UIColor colorWithRed:1.0 green:0.56 blue:0.18 alpha:1.0])

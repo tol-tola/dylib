@@ -11,10 +11,23 @@ screens, the inside of the modal scrolls instead of becoming full-screen.
 
 ## Line ESP
 
-The menu includes a `Line ESP` toggle. When enabled, it draws a transparent
-colored guide-line overlay over the game screen. Drag the dots to adjust the
-cue point, target point, pocket point, and bank points. The overlay is
-visual-only and does not read ball positions from the game.
+The `Line ESP` toggle now runs a first-pass automatic screen-vision detector.
+When enabled, it captures the underlying game window, finds the green table
+area, detects ball-like circles, chooses the likely cue ball, checks clear
+ball-to-pocket paths, and draws predicted contact/pocket lines.
+
+This is still an approximation. For stronger prediction, the dylib needs one of
+these data sources:
+
+- The game's own ball positions, cue angle, and power values from source code or
+  authorized debug data.
+- A screen-vision detector that reads the rendered table image, detects balls,
+  detects cue angle/power, and then runs a local pool-physics simulation.
+
+The current version shows only clear detected shot paths, marks reachable
+pockets green, and draws approximate cue/object paths. More exact final resting
+spots and shot-power prediction require better cue/power detection and a fuller
+physics model.
 
 Edit these values at the top of `TolaDylib/Tola.m` before building:
 
