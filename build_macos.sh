@@ -14,6 +14,7 @@ xcrun --sdk iphoneos clang \
   -isysroot "$SDK_PATH" \
   -miphoneos-version-min=12.0 \
   -install_name "@rpath/tola.dylib" \
+  -framework CoreGraphics \
   -framework Foundation \
   -framework UIKit \
   "$PROJECT_DIR/TolaDylib/Tola.m" \
