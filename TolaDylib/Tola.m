@@ -43,6 +43,18 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
                        to.y - (dy / length) * distanceFromTo);
 }
 
+static CGPoint TolaNormalizeVector(CGPoint vector) {
+    CGFloat length = sqrt(vector.x * vector.x + vector.y * vector.y);
+    if (length <= 0.0001) {
+        return CGPointZero;
+    }
+    return CGPointMake(vector.x / length, vector.y / length);
+}
+
+static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
+    return a.x * b.x + a.y * b.y;
+}
+
 @interface TolaPassthroughWindow : UIWindow
 @end
 
@@ -468,7 +480,7 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
         *sourceSize = windowSize;
     }
 
-    CGFloat maxAnalysisWidth = 560.0;
+    CGFloat maxAnalysisWidth = 420.0;
     CGFloat scale = MIN(1.0, maxAnalysisWidth / MAX(windowSize.width, 1.0));
     CGSize analysisSize = CGSizeMake(MAX(1.0, floor(windowSize.width * scale)),
                                      MAX(1.0, floor(windowSize.height * scale)));
@@ -549,6 +561,91 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
     return YES;
 }
 
+- (TolaPoolBall *)likelyCueBallFromBalls:(NSArray<TolaPoolBall *> *)balls tableRect:(CGRect)tableRect {
+    TolaPoolBall *cueBall = nil;
+    CGFloat bestCueScore = -CGFLOAT_MAX;
+
+    for (TolaPoolBall *ball in balls) {
+        CGFloat leftBonus = 1.0 - ((ball.center.x - CGRectGetMinX(tableRect)) / MAX(CGRectGetWidth(tableRect), 1.0));
+        CGFloat cueScore = ball.brightness * 2.3 - ball.saturation * 1.2 + leftBonus * 0.25;
+        if (cueScore > bestCueScore) {
+            bestCueScore = cueScore;
+            cueBall = ball;
+        }
+    }
+
+    cueBall.cueBall = YES;
+    return cueBall;
+}
+
+- (BOOL)isBrightAimPixelWithR:(UInt8)r g:(UInt8)g b:(UInt8)b {
+    NSInteger maxValue = MAX(MAX(r, g), b);
+    NSInteger minValue = MIN(MIN(r, g), b);
+    return maxValue > 188 && (maxValue - minValue) < 62;
+}
+
+- (BOOL)detectAimDirectionForCueBall:(TolaPoolBall *)cueBall
+                                 data:(UInt8 *)data
+                                width:(size_t)width
+                               height:(size_t)height
+                               scaleX:(CGFloat)scaleX
+                               scaleY:(CGFloat)scaleY
+                             outVector:(CGPoint *)outVector {
+    if (!cueBall || !data || width < 20 || height < 20) {
+        return NO;
+    }
+
+    CGFloat cueX = cueBall.center.x / MAX(scaleX, 0.0001);
+    CGFloat cueY = cueBall.center.y / MAX(scaleY, 0.0001);
+    CGFloat startDistance = MAX(10.0, cueBall.radius / MAX(scaleX, 0.0001) * 1.9);
+    CGFloat maxDistance = MIN(width, height) * 0.72;
+    CGFloat bestScore = 0.0;
+    CGFloat bestAngle = 0.0;
+
+    for (NSInteger degree = 0; degree < 360; degree += 3) {
+        CGFloat radians = (CGFloat)degree * (CGFloat)M_PI / 180.0;
+        CGFloat dx = cos(radians);
+        CGFloat dy = sin(radians);
+        CGFloat score = 0.0;
+        NSInteger streak = 0;
+
+        for (CGFloat distance = startDistance; distance < maxDistance; distance += 4.0) {
+            NSInteger x = (NSInteger)llround(cueX + dx * distance);
+            NSInteger y = (NSInteger)llround(cueY + dy * distance);
+            if (x < 2 || x >= (NSInteger)width - 2 || y < 2 || y >= (NSInteger)height - 2) {
+                break;
+            }
+
+            NSInteger offset = (y * (NSInteger)width + x) * 4;
+            UInt8 r = data[offset];
+            UInt8 g = data[offset + 1];
+            UInt8 b = data[offset + 2];
+
+            if ([self isBrightAimPixelWithR:r g:g b:b]) {
+                streak++;
+                score += 1.0 + MIN(streak, 8) * 0.18;
+            } else {
+                streak = 0;
+                score -= 0.08;
+            }
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestAngle = radians;
+        }
+    }
+
+    if (bestScore < 5.0) {
+        return NO;
+    }
+
+    if (outVector) {
+        *outVector = CGPointMake(cos(bestAngle), sin(bestAngle));
+    }
+    return YES;
+}
+
 - (NSArray<TolaPoolBall *> *)mergeCloseBalls:(NSArray<TolaPoolBall *> *)balls {
     NSMutableArray<TolaPoolBall *> *merged = [NSMutableArray array];
 
@@ -576,7 +673,11 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
     return merged;
 }
 
-- (NSDictionary *)predictionForBalls:(NSArray<TolaPoolBall *> *)balls tableRect:(CGRect)tableRect {
+- (NSDictionary *)predictionForBalls:(NSArray<TolaPoolBall *> *)balls
+                            tableRect:(CGRect)tableRect
+                              cueBall:(TolaPoolBall *)cueBall
+                         aimDirection:(CGPoint)aimDirection
+                       hasAimDirection:(BOOL)hasAimDirection {
     if (balls.count < 2 || CGRectIsEmpty(tableRect)) {
         return @{
             @"balls": @[],
@@ -586,18 +687,11 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
         };
     }
 
-    TolaPoolBall *cueBall = nil;
-    CGFloat bestCueScore = -CGFLOAT_MAX;
-    for (TolaPoolBall *ball in balls) {
-        CGFloat leftBonus = 1.0 - ((ball.center.x - CGRectGetMinX(tableRect)) / MAX(CGRectGetWidth(tableRect), 1.0));
-        CGFloat cueScore = ball.brightness * 2.3 - ball.saturation * 1.2 + leftBonus * 0.25;
-        if (cueScore > bestCueScore) {
-            bestCueScore = cueScore;
-            cueBall = ball;
-        }
+    if (!cueBall) {
+        cueBall = [self likelyCueBallFromBalls:balls tableRect:tableRect];
     }
-
     cueBall.cueBall = YES;
+    aimDirection = TolaNormalizeVector(aimDirection);
 
     NSArray<NSValue *> *pockets = [self pocketsForTableRect:tableRect];
     NSMutableArray<NSDictionary *> *candidates = [NSMutableArray array];
@@ -636,13 +730,27 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
                 continue;
             }
 
+            CGFloat aimPenalty = 0.0;
+            CGFloat aimDot = 1.0;
+            if (hasAimDirection) {
+                CGPoint shotDirection = TolaNormalizeVector(CGPointMake(ghostPoint.x - cueBall.center.x,
+                                                                        ghostPoint.y - cueBall.center.y));
+                aimDot = TolaDotProduct(shotDirection, aimDirection);
+                if (aimDot < 0.82) {
+                    continue;
+                }
+                aimPenalty = (1.0 - aimDot) * 4200.0;
+            }
+
             CGFloat cueToGhostDistance = TolaDistance(cueBall.center, ghostPoint);
             CGFloat score = cueToGhostDistance + objectToPocketDistance;
+            score += aimPenalty;
             [candidates addObject:@{
                 @"score": @(score),
                 @"object": objectBall,
                 @"ghost": [NSValue valueWithCGPoint:ghostPoint],
-                @"pocket": [NSValue valueWithCGPoint:pocket]
+                @"pocket": [NSValue valueWithCGPoint:pocket],
+                @"aimDot": @(aimDot)
             }];
         }
     }
@@ -654,7 +762,7 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
     NSMutableArray<TolaPoolPrediction *> *predictions = [NSMutableArray array];
     NSMutableArray<TolaPoolBall *> *shownBalls = [NSMutableArray arrayWithObject:cueBall];
     NSMutableArray<NSValue *> *greenPockets = [NSMutableArray array];
-    NSInteger maxCandidates = MIN((NSInteger)candidates.count, 3);
+    NSInteger maxCandidates = MIN((NSInteger)candidates.count, 1);
 
     for (NSInteger index = 0; index < maxCandidates; index++) {
         NSDictionary *candidate = candidates[index];
@@ -694,7 +802,7 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
     }
 
     NSString *status = maxCandidates > 0
-        ? [NSString stringWithFormat:@"Auto ESP: %ld clear shot%@", (long)maxCandidates, maxCandidates == 1 ? @"" : @"s"]
+        ? [NSString stringWithFormat:@"Auto ESP: %@ shot", hasAimDirection ? @"aimed" : @"best"]
         : @"Auto ESP: no clear pocket path";
 
     return @{
@@ -742,11 +850,16 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), cgImage);
     CGContextRelease(context);
 
+    NSInteger *rowGreenCounts = calloc(height, sizeof(NSInteger));
+    NSInteger *columnGreenCounts = calloc(width, sizeof(NSInteger));
     NSInteger greenCount = 0;
-    NSInteger minGreenX = (NSInteger)width;
-    NSInteger minGreenY = (NSInteger)height;
-    NSInteger maxGreenX = 0;
-    NSInteger maxGreenY = 0;
+
+    if (!rowGreenCounts || !columnGreenCounts) {
+        free(data);
+        free(rowGreenCounts);
+        free(columnGreenCounts);
+        return nil;
+    }
 
     for (NSInteger y = 0; y < (NSInteger)height; y++) {
         for (NSInteger x = 0; x < (NSInteger)width; x++) {
@@ -757,15 +870,88 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
 
             if ([self isGreenFeltWithR:r g:g b:b]) {
                 greenCount++;
-                minGreenX = MIN(minGreenX, x);
-                minGreenY = MIN(minGreenY, y);
-                maxGreenX = MAX(maxGreenX, x);
-                maxGreenY = MAX(maxGreenY, y);
+                rowGreenCounts[y]++;
+                columnGreenCounts[x]++;
             }
         }
     }
 
     if (greenCount < 800) {
+        free(data);
+        free(rowGreenCounts);
+        free(columnGreenCounts);
+        return nil;
+    }
+
+    NSInteger minGreenY = 0;
+    NSInteger maxGreenY = 0;
+    NSInteger bestRowStart = 0;
+    NSInteger bestRowEnd = 0;
+    NSInteger currentRowStart = -1;
+    NSInteger rowThreshold = MAX(24, (NSInteger)(width * 0.24));
+
+    for (NSInteger y = 0; y < (NSInteger)height; y++) {
+        BOOL dense = rowGreenCounts[y] >= rowThreshold;
+        if (dense && currentRowStart < 0) {
+            currentRowStart = y;
+        }
+
+        if ((!dense || y == (NSInteger)height - 1) && currentRowStart >= 0) {
+            NSInteger currentRowEnd = dense ? y : y - 1;
+            if ((currentRowEnd - currentRowStart) > (bestRowEnd - bestRowStart)) {
+                bestRowStart = currentRowStart;
+                bestRowEnd = currentRowEnd;
+            }
+            currentRowStart = -1;
+        }
+    }
+
+    minGreenY = bestRowStart;
+    maxGreenY = bestRowEnd;
+
+    NSInteger minGreenX = 0;
+    NSInteger maxGreenX = 0;
+    NSInteger bestColumnStart = 0;
+    NSInteger bestColumnEnd = 0;
+    NSInteger currentColumnStart = -1;
+    NSInteger tableHeight = MAX(1, maxGreenY - minGreenY + 1);
+    NSInteger columnThreshold = MAX(16, (NSInteger)(tableHeight * 0.22));
+
+    for (NSInteger x = 0; x < (NSInteger)width; x++) {
+        NSInteger tableColumnGreenCount = 0;
+        for (NSInteger y = minGreenY; y <= maxGreenY; y++) {
+            NSInteger offset = (y * (NSInteger)width + x) * 4;
+            UInt8 r = data[offset];
+            UInt8 g = data[offset + 1];
+            UInt8 b = data[offset + 2];
+            if ([self isGreenFeltWithR:r g:g b:b]) {
+                tableColumnGreenCount++;
+            }
+        }
+
+        BOOL dense = tableColumnGreenCount >= columnThreshold;
+        if (dense && currentColumnStart < 0) {
+            currentColumnStart = x;
+        }
+
+        if ((!dense || x == (NSInteger)width - 1) && currentColumnStart >= 0) {
+            NSInteger currentColumnEnd = dense ? x : x - 1;
+            if ((currentColumnEnd - currentColumnStart) > (bestColumnEnd - bestColumnStart)) {
+                bestColumnStart = currentColumnStart;
+                bestColumnEnd = currentColumnEnd;
+            }
+            currentColumnStart = -1;
+        }
+    }
+
+    minGreenX = bestColumnStart;
+    maxGreenX = bestColumnEnd;
+    free(rowGreenCounts);
+    free(columnGreenCounts);
+
+    NSInteger tablePixelWidth = maxGreenX - minGreenX;
+    NSInteger tablePixelHeight = maxGreenY - minGreenY;
+    if (tablePixelWidth < (NSInteger)(width * 0.35) || tablePixelHeight < (NSInteger)(height * 0.25)) {
         free(data);
         return nil;
     }
@@ -899,13 +1085,26 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
         }
     }
 
+    NSArray<TolaPoolBall *> *balls = [self mergeCloseBalls:detectedBalls];
+    TolaPoolBall *cueBall = [self likelyCueBallFromBalls:balls tableRect:tableRect];
+    CGPoint aimDirection = CGPointZero;
+    BOOL hasAimDirection = [self detectAimDirectionForCueBall:cueBall
+                                                         data:data
+                                                        width:width
+                                                       height:height
+                                                       scaleX:scaleX
+                                                       scaleY:scaleY
+                                                    outVector:&aimDirection];
+    NSDictionary *prediction = [self predictionForBalls:balls
+                                              tableRect:tableRect
+                                                cueBall:cueBall
+                                           aimDirection:aimDirection
+                                         hasAimDirection:hasAimDirection];
+
     free(data);
     free(mask);
     free(visited);
     free(stack);
-
-    NSArray<TolaPoolBall *> *balls = [self mergeCloseBalls:detectedBalls];
-    NSDictionary *prediction = [self predictionForBalls:balls tableRect:tableRect];
 
     NSMutableDictionary *result = [NSMutableDictionary dictionaryWithDictionary:prediction];
     result[@"table"] = [NSValue valueWithCGRect:tableRect];
@@ -975,7 +1174,7 @@ static CGPoint TolaPointAlongLine(CGPoint from, CGPoint to, CGFloat distanceFrom
     }
 
     [self refreshAutoLineESP];
-    self.visionTimer = [NSTimer timerWithTimeInterval:0.45
+    self.visionTimer = [NSTimer timerWithTimeInterval:0.20
                                                target:self
                                              selector:@selector(refreshAutoLineESP)
                                              userInfo:nil
