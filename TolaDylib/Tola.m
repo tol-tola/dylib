@@ -1,11 +1,13 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <mach-o/dyld.h>
 
-static NSString * const TolaMenuTitle = @"TolaiOs";
-static NSString * const TolaTelegramURL = @"https://t.me/toltola";
-static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@tola.wxw";
-static NSString * const TolaFacebookURL = @"https://www.facebook.com/tolawxw";
-static NSString * const TolaWebsiteURL = @"https://tolaone.com";
+static NSString * const TolaMenuTitle = @"TolaiOS";
+static NSString * const TolaMenuSubtitle = @"Unknown Developer";
+static NSString * const TolaTelegramURL = @"https://t.me/your_username";
+static NSString * const TolaTikTokURL = @"https://www.tiktok.com/@your_username";
+static NSString * const TolaFacebookURL = @"https://www.facebook.com/your_username";
+static NSString * const TolaWebsiteURL = @"https://example.com";
 static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
 @interface TolaPassthroughWindow : UIWindow
@@ -43,6 +45,22 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 - (void)start {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self prepareOverlayWindow];
+        [self showMenu];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(rebuildMenuForOrientation)
+                                                     name:UIDeviceOrientationDidChangeNotification
+                                                   object:nil];
+        [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+    });
+}
+
+- (void)rebuildMenuForOrientation {
+    if (!self.menuView) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
         [self showMenu];
     });
 }
@@ -82,17 +100,55 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     self.overlayWindow = window;
 }
 
-- (UIButton *)buttonWithTitle:(NSString *)title action:(SEL)action {
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.backgroundColor = [UIColor colorWithWhite:0.95 alpha:1.0];
-    button.layer.cornerRadius = 10.0;
-    button.titleLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightSemibold];
-    [button setTitle:title forState:UIControlStateNormal];
-    [button setTitleColor:[UIColor colorWithRed:0.08 green:0.10 blue:0.14 alpha:1.0]
-                 forState:UIControlStateNormal];
-    [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
-    return button;
+- (UIColor *)tolaBlue {
+    return [UIColor colorWithRed:0.0 green:0.57 blue:1.0 alpha:1.0];
+}
+
+- (UIColor *)tolaPurple {
+    return [UIColor colorWithRed:0.52 green:0.24 blue:1.0 alpha:1.0];
+}
+
+- (UIImage *)systemImageNamed:(NSString *)name {
+    if (@available(iOS 13.0, *)) {
+        return [UIImage systemImageNamed:name];
+    }
+    return nil;
+}
+
+- (NSArray<NSString *> *)floatingIconSearchPaths {
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    NSBundle *mainBundle = NSBundle.mainBundle;
+    NSString *bundlePath = mainBundle.bundlePath;
+    NSString *resourcePath = mainBundle.resourcePath;
+
+    if (bundlePath.length > 0) {
+        [paths addObject:[bundlePath stringByAppendingPathComponent:TolaFloatingIconFileName]];
+        [paths addObject:[[bundlePath stringByAppendingPathComponent:@"Frameworks"] stringByAppendingPathComponent:TolaFloatingIconFileName]];
+    }
+
+    if (resourcePath.length > 0) {
+        [paths addObject:[resourcePath stringByAppendingPathComponent:TolaFloatingIconFileName]];
+    }
+
+    uint32_t imageCount = _dyld_image_count();
+    for (uint32_t index = 0; index < imageCount; index++) {
+        const char *imageName = _dyld_get_image_name(index);
+        if (!imageName) {
+            continue;
+        }
+
+        NSString *imagePath = [NSString stringWithUTF8String:imageName];
+        if (![imagePath.lastPathComponent.lowercaseString isEqualToString:@"tola.dylib"]) {
+            continue;
+        }
+
+        NSString *dylibDirectory = imagePath.stringByDeletingLastPathComponent;
+        if (dylibDirectory.length > 0) {
+            [paths addObject:[dylibDirectory stringByAppendingPathComponent:TolaFloatingIconFileName]];
+        }
+    }
+
+    return paths;
 }
 
 - (UIImage *)floatingIconImage {
@@ -103,123 +159,297 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
     NSString *fileName = TolaFloatingIconFileName.stringByDeletingPathExtension;
     NSString *extension = TolaFloatingIconFileName.pathExtension;
-    NSString *path = [NSBundle.mainBundle pathForResource:fileName ofType:extension];
-    if (!path) {
-        return nil;
+    NSString *bundlePath = [NSBundle.mainBundle pathForResource:fileName ofType:extension];
+    if (bundlePath) {
+        image = [UIImage imageWithContentsOfFile:bundlePath];
+        if (image) {
+            return image;
+        }
     }
 
-    return [UIImage imageWithContentsOfFile:path];
+    for (NSString *path in [self floatingIconSearchPaths]) {
+        image = [UIImage imageWithContentsOfFile:path];
+        if (image) {
+            return image;
+        }
+    }
+
+    return nil;
+}
+
+- (UILabel *)labelWithText:(NSString *)text
+                  fontSize:(CGFloat)fontSize
+                    weight:(UIFontWeight)weight
+                     color:(UIColor *)color
+                 alignment:(NSTextAlignment)alignment {
+    UILabel *label = [UILabel new];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.text = text;
+    label.textColor = color;
+    label.textAlignment = alignment;
+    label.font = [UIFont systemFontOfSize:fontSize weight:weight];
+    label.adjustsFontSizeToFitWidth = YES;
+    label.minimumScaleFactor = 0.72;
+    label.numberOfLines = 1;
+    return label;
+}
+
+- (UIControl *)menuRowWithTitle:(NSString *)title
+                       subtitle:(NSString *)subtitle
+                      iconName:(NSString *)iconName
+                   fallbackText:(NSString *)fallbackText
+                    accentColor:(UIColor *)accentColor
+                         action:(SEL)action
+                        compact:(BOOL)compact {
+    UIControl *row = [UIControl new];
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    row.backgroundColor = [accentColor colorWithAlphaComponent:0.13];
+    row.layer.cornerRadius = compact ? 18.0 : 24.0;
+    row.layer.borderWidth = 1.4;
+    row.layer.borderColor = [accentColor colorWithAlphaComponent:0.38].CGColor;
+    [row addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
+
+    UIView *iconHolder = [UIView new];
+    iconHolder.translatesAutoresizingMaskIntoConstraints = NO;
+    iconHolder.backgroundColor = [accentColor colorWithAlphaComponent:0.16];
+    iconHolder.layer.cornerRadius = compact ? 21.0 : 28.0;
+
+    UIImageView *imageView = [UIImageView new];
+    imageView.translatesAutoresizingMaskIntoConstraints = NO;
+    imageView.contentMode = UIViewContentModeScaleAspectFit;
+    imageView.tintColor = accentColor;
+    imageView.image = [[self systemImageNamed:iconName] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+
+    UILabel *fallbackLabel = [self labelWithText:fallbackText
+                                        fontSize:(compact ? 22.0 : 31.0)
+                                          weight:UIFontWeightBold
+                                           color:accentColor
+                                       alignment:NSTextAlignmentCenter];
+    fallbackLabel.hidden = (imageView.image != nil);
+
+    UILabel *titleLabel = [self labelWithText:title
+                                     fontSize:(compact ? 19.0 : 25.0)
+                                       weight:UIFontWeightBold
+                                        color:accentColor
+                                    alignment:NSTextAlignmentLeft];
+    UILabel *subtitleLabel = [self labelWithText:subtitle
+                                       fontSize:(compact ? 13.0 : 18.0)
+                                         weight:UIFontWeightMedium
+                                          color:[UIColor colorWithWhite:0.68 alpha:1.0]
+                                      alignment:NSTextAlignmentLeft];
+
+    UIStackView *textStack = [[UIStackView alloc] initWithArrangedSubviews:@[titleLabel, subtitleLabel]];
+    textStack.translatesAutoresizingMaskIntoConstraints = NO;
+    textStack.axis = UILayoutConstraintAxisVertical;
+    textStack.spacing = compact ? 3.0 : 7.0;
+
+    [row addSubview:iconHolder];
+    [iconHolder addSubview:imageView];
+    [iconHolder addSubview:fallbackLabel];
+    [row addSubview:textStack];
+
+    CGFloat rowHeight = compact ? 86.0 : 116.0;
+    CGFloat iconSize = compact ? 42.0 : 56.0;
+    CGFloat leading = compact ? 16.0 : 24.0;
+    CGFloat gap = compact ? 14.0 : 22.0;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [row.heightAnchor constraintEqualToConstant:rowHeight],
+
+        [iconHolder.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:leading],
+        [iconHolder.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+        [iconHolder.widthAnchor constraintEqualToConstant:iconSize],
+        [iconHolder.heightAnchor constraintEqualToConstant:iconSize],
+
+        [imageView.centerXAnchor constraintEqualToAnchor:iconHolder.centerXAnchor],
+        [imageView.centerYAnchor constraintEqualToAnchor:iconHolder.centerYAnchor],
+        [imageView.widthAnchor constraintEqualToAnchor:iconHolder.widthAnchor multiplier:0.72],
+        [imageView.heightAnchor constraintEqualToAnchor:iconHolder.heightAnchor multiplier:0.72],
+
+        [fallbackLabel.topAnchor constraintEqualToAnchor:iconHolder.topAnchor],
+        [fallbackLabel.leadingAnchor constraintEqualToAnchor:iconHolder.leadingAnchor],
+        [fallbackLabel.trailingAnchor constraintEqualToAnchor:iconHolder.trailingAnchor],
+        [fallbackLabel.bottomAnchor constraintEqualToAnchor:iconHolder.bottomAnchor],
+
+        [textStack.leadingAnchor constraintEqualToAnchor:iconHolder.trailingAnchor constant:gap],
+        [textStack.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-leading],
+        [textStack.centerYAnchor constraintEqualToAnchor:row.centerYAnchor]
+    ]];
+
+    return row;
+}
+
+- (UIStackView *)stackWithAxis:(UILayoutConstraintAxis)axis spacing:(CGFloat)spacing views:(NSArray<UIView *> *)views {
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:views];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = axis;
+    stack.spacing = spacing;
+    stack.distribution = UIStackViewDistributionFillEqually;
+    return stack;
 }
 
 - (void)showMenu {
     [self prepareOverlayWindow];
     [self.floatButton removeFromSuperview];
     self.floatButton = nil;
+    [self.menuView removeFromSuperview];
+    self.menuView = nil;
 
     UIView *rootView = self.overlayWindow.rootViewController.view;
-    rootView.userInteractionEnabled = YES;
+    for (UIView *view in [rootView.subviews copy]) {
+        [view removeFromSuperview];
+    }
 
-    UIView *dimView = [UIView new];
-    dimView.translatesAutoresizingMaskIntoConstraints = NO;
-    dimView.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.45];
-    dimView.tag = 1001;
+    BOOL landscape = CGRectGetWidth(rootView.bounds) > CGRectGetHeight(rootView.bounds);
+    BOOL compact = landscape || CGRectGetHeight(rootView.bounds) < 720.0;
+    CGFloat contentWidthMultiplier = landscape ? 0.92 : 0.88;
+    CGFloat maxContentWidth = landscape ? 760.0 : 460.0;
 
-    UIView *menuView = [UIView new];
-    menuView.translatesAutoresizingMaskIntoConstraints = NO;
-    menuView.backgroundColor = UIColor.whiteColor;
-    menuView.layer.cornerRadius = 18.0;
-    menuView.layer.shadowColor = UIColor.blackColor.CGColor;
-    menuView.layer.shadowOpacity = 0.22;
-    menuView.layer.shadowRadius = 24.0;
-    menuView.layer.shadowOffset = CGSizeMake(0.0, 12.0);
+    UIView *backgroundView = [UIView new];
+    backgroundView.translatesAutoresizingMaskIntoConstraints = NO;
+    backgroundView.backgroundColor = [UIColor colorWithRed:0.03 green:0.04 blue:0.08 alpha:0.96];
 
-    UILabel *titleLabel = [UILabel new];
-    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    titleLabel.text = TolaMenuTitle;
-    titleLabel.textAlignment = NSTextAlignmentCenter;
-    titleLabel.font = [UIFont systemFontOfSize:26.0 weight:UIFontWeightBold];
-    titleLabel.textColor = [UIColor colorWithRed:0.05 green:0.06 blue:0.08 alpha:1.0];
+    UIScrollView *scrollView = [UIScrollView new];
+    scrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    scrollView.alwaysBounceVertical = YES;
+    scrollView.showsVerticalScrollIndicator = NO;
+    scrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
 
-    UILabel *subtitleLabel = [UILabel new];
-    subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitleLabel.text = @"Contact";
-    subtitleLabel.textAlignment = NSTextAlignmentCenter;
-    subtitleLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightMedium];
-    subtitleLabel.textColor = [UIColor colorWithWhite:0.35 alpha:1.0];
+    UIView *contentView = [UIView new];
+    contentView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[
-        [self buttonWithTitle:@"Telegram" action:@selector(openTelegram)],
-        [self buttonWithTitle:@"TikTok" action:@selector(openTikTok)],
-        [self buttonWithTitle:@"Facebook" action:@selector(openFacebook)],
-        [self buttonWithTitle:@"Website" action:@selector(openWebsite)]
-    ]];
-    stackView.translatesAutoresizingMaskIntoConstraints = NO;
-    stackView.axis = UILayoutConstraintAxisVertical;
-    stackView.spacing = 10.0;
-    stackView.distribution = UIStackViewDistributionFillEqually;
+    UILabel *titleLabel = [self labelWithText:TolaMenuTitle
+                                     fontSize:(compact ? 42.0 : 54.0)
+                                       weight:UIFontWeightHeavy
+                                        color:[self tolaBlue]
+                                    alignment:NSTextAlignmentCenter];
+    UILabel *subtitleLabel = [self labelWithText:TolaMenuSubtitle
+                                        fontSize:(compact ? 20.0 : 26.0)
+                                          weight:UIFontWeightBold
+                                           color:[UIColor colorWithWhite:0.68 alpha:1.0]
+                                      alignment:NSTextAlignmentCenter];
 
-    UIButton *closeButton = [self buttonWithTitle:@"Close" action:@selector(closeMenu)];
-    closeButton.backgroundColor = [UIColor colorWithRed:0.06 green:0.09 blue:0.16 alpha:1.0];
-    [closeButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    UIControl *telegram = [self menuRowWithTitle:@"Telegram"
+                                        subtitle:@"Join our Telegram Channel"
+                                        iconName:@"paperplane.fill"
+                                    fallbackText:@"TG"
+                                     accentColor:[self tolaBlue]
+                                          action:@selector(openTelegram)
+                                         compact:compact];
+    UIControl *tikTok = [self menuRowWithTitle:@"TikTok"
+                                      subtitle:@"Follow our TikTok"
+                                      iconName:@"music.note"
+                                  fallbackText:@"TK"
+                                   accentColor:UIColor.whiteColor
+                                        action:@selector(openTikTok)
+                                       compact:compact];
+    tikTok.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.76];
+    tikTok.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
 
-    [rootView addSubview:dimView];
-    [rootView addSubview:menuView];
-    [menuView addSubview:titleLabel];
-    [menuView addSubview:subtitleLabel];
-    [menuView addSubview:stackView];
-    [menuView addSubview:closeButton];
+    UIControl *facebook = [self menuRowWithTitle:@"Facebook"
+                                        subtitle:@"Follow our Facebook Page"
+                                        iconName:@"f.cursive.circle.fill"
+                                    fallbackText:@"f"
+                                     accentColor:[self tolaBlue]
+                                          action:@selector(openFacebook)
+                                         compact:compact];
+    UIControl *website = [self menuRowWithTitle:@"Website"
+                                       subtitle:@"Visit our Website"
+                                       iconName:@"globe"
+                                   fallbackText:@"W"
+                                    accentColor:[self tolaPurple]
+                                         action:@selector(openWebsite)
+                                        compact:compact];
+    UIControl *close = [self menuRowWithTitle:@"Close"
+                                     subtitle:@"Close this menu"
+                                     iconName:@"xmark"
+                                 fallbackText:@"X"
+                                  accentColor:[UIColor colorWithWhite:0.72 alpha:1.0]
+                                       action:@selector(closeMenu)
+                                      compact:compact];
+    close.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.76];
+    close.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
 
-    self.menuView = menuView;
+    UIView *rowsView = nil;
+    if (landscape) {
+        UIStackView *firstRow = [self stackWithAxis:UILayoutConstraintAxisHorizontal
+                                           spacing:14.0
+                                            views:@[telegram, tikTok]];
+        UIStackView *secondRow = [self stackWithAxis:UILayoutConstraintAxisHorizontal
+                                            spacing:14.0
+                                             views:@[facebook, website]];
+        UIStackView *landscapeRows = [self stackWithAxis:UILayoutConstraintAxisVertical
+                                                spacing:14.0
+                                                 views:@[firstRow, secondRow, close]];
+        rowsView = landscapeRows;
+    } else {
+        UIStackView *portraitRows = [self stackWithAxis:UILayoutConstraintAxisVertical
+                                                spacing:(compact ? 14.0 : 20.0)
+                                                 views:@[telegram, tikTok, facebook, website, close]];
+        rowsView = portraitRows;
+    }
 
+    [rootView addSubview:backgroundView];
+    [rootView addSubview:scrollView];
+    [scrollView addSubview:contentView];
+    [contentView addSubview:titleLabel];
+    [contentView addSubview:subtitleLabel];
+    [contentView addSubview:rowsView];
+
+    self.menuView = backgroundView;
+
+    UILayoutGuide *safeArea = rootView.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [dimView.topAnchor constraintEqualToAnchor:rootView.topAnchor],
-        [dimView.leadingAnchor constraintEqualToAnchor:rootView.leadingAnchor],
-        [dimView.trailingAnchor constraintEqualToAnchor:rootView.trailingAnchor],
-        [dimView.bottomAnchor constraintEqualToAnchor:rootView.bottomAnchor],
+        [backgroundView.topAnchor constraintEqualToAnchor:rootView.topAnchor],
+        [backgroundView.leadingAnchor constraintEqualToAnchor:rootView.leadingAnchor],
+        [backgroundView.trailingAnchor constraintEqualToAnchor:rootView.trailingAnchor],
+        [backgroundView.bottomAnchor constraintEqualToAnchor:rootView.bottomAnchor],
 
-        [menuView.centerXAnchor constraintEqualToAnchor:rootView.centerXAnchor],
-        [menuView.centerYAnchor constraintEqualToAnchor:rootView.centerYAnchor],
-        [menuView.widthAnchor constraintLessThanOrEqualToConstant:340.0],
-        [menuView.widthAnchor constraintEqualToAnchor:rootView.widthAnchor multiplier:0.84],
+        [scrollView.topAnchor constraintEqualToAnchor:safeArea.topAnchor],
+        [scrollView.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor],
+        [scrollView.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor],
+        [scrollView.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor],
 
-        [titleLabel.topAnchor constraintEqualToAnchor:menuView.topAnchor constant:24.0],
-        [titleLabel.leadingAnchor constraintEqualToAnchor:menuView.leadingAnchor constant:20.0],
-        [titleLabel.trailingAnchor constraintEqualToAnchor:menuView.trailingAnchor constant:-20.0],
+        [contentView.topAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.topAnchor],
+        [contentView.leadingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.leadingAnchor],
+        [contentView.trailingAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.trailingAnchor],
+        [contentView.bottomAnchor constraintEqualToAnchor:scrollView.contentLayoutGuide.bottomAnchor],
+        [contentView.widthAnchor constraintEqualToAnchor:scrollView.frameLayoutGuide.widthAnchor],
+        [contentView.heightAnchor constraintGreaterThanOrEqualToAnchor:scrollView.frameLayoutGuide.heightAnchor],
 
-        [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:6.0],
-        [subtitleLabel.leadingAnchor constraintEqualToAnchor:menuView.leadingAnchor constant:20.0],
-        [subtitleLabel.trailingAnchor constraintEqualToAnchor:menuView.trailingAnchor constant:-20.0],
+        [titleLabel.topAnchor constraintEqualToAnchor:contentView.topAnchor constant:(compact ? 20.0 : 64.0)],
+        [titleLabel.centerXAnchor constraintEqualToAnchor:contentView.centerXAnchor],
+        [titleLabel.widthAnchor constraintLessThanOrEqualToConstant:maxContentWidth],
+        [titleLabel.widthAnchor constraintEqualToAnchor:contentView.widthAnchor multiplier:contentWidthMultiplier],
 
-        [stackView.topAnchor constraintEqualToAnchor:subtitleLabel.bottomAnchor constant:18.0],
-        [stackView.leadingAnchor constraintEqualToAnchor:menuView.leadingAnchor constant:22.0],
-        [stackView.trailingAnchor constraintEqualToAnchor:menuView.trailingAnchor constant:-22.0],
-        [stackView.heightAnchor constraintEqualToConstant:206.0],
+        [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:(compact ? 4.0 : 12.0)],
+        [subtitleLabel.centerXAnchor constraintEqualToAnchor:contentView.centerXAnchor],
+        [subtitleLabel.widthAnchor constraintEqualToAnchor:titleLabel.widthAnchor],
 
-        [closeButton.topAnchor constraintEqualToAnchor:stackView.bottomAnchor constant:14.0],
-        [closeButton.leadingAnchor constraintEqualToAnchor:menuView.leadingAnchor constant:22.0],
-        [closeButton.trailingAnchor constraintEqualToAnchor:menuView.trailingAnchor constant:-22.0],
-        [closeButton.heightAnchor constraintEqualToConstant:48.0],
-        [closeButton.bottomAnchor constraintEqualToAnchor:menuView.bottomAnchor constant:-22.0]
+        [rowsView.topAnchor constraintEqualToAnchor:subtitleLabel.bottomAnchor constant:(compact ? 18.0 : 46.0)],
+        [rowsView.centerXAnchor constraintEqualToAnchor:contentView.centerXAnchor],
+        [rowsView.widthAnchor constraintEqualToAnchor:titleLabel.widthAnchor],
+        [rowsView.bottomAnchor constraintLessThanOrEqualToAnchor:contentView.bottomAnchor constant:-24.0],
+        [rowsView.centerYAnchor constraintLessThanOrEqualToAnchor:contentView.centerYAnchor constant:(landscape ? 46.0 : 120.0)]
     ]];
 
-    menuView.transform = CGAffineTransformMakeScale(0.92, 0.92);
-    menuView.alpha = 0.0;
+    backgroundView.alpha = 0.0;
+    rowsView.transform = CGAffineTransformMakeScale(0.96, 0.96);
     [UIView animateWithDuration:0.2 animations:^{
-        menuView.transform = CGAffineTransformIdentity;
-        menuView.alpha = 1.0;
+        backgroundView.alpha = 1.0;
+        rowsView.transform = CGAffineTransformIdentity;
     }];
 }
 
 - (void)closeMenu {
-    UIView *rootView = self.overlayWindow.rootViewController.view;
-    UIView *dimView = [rootView viewWithTag:1001];
-
+    UIView *menuView = self.menuView;
     [UIView animateWithDuration:0.16 animations:^{
-        self.menuView.alpha = 0.0;
-        dimView.alpha = 0.0;
+        menuView.alpha = 0.0;
     } completion:^(BOOL finished) {
-        [self.menuView removeFromSuperview];
-        [dimView removeFromSuperview];
+        UIView *rootView = self.overlayWindow.rootViewController.view;
+        for (UIView *view in [rootView.subviews copy]) {
+            [view removeFromSuperview];
+        }
         self.menuView = nil;
         [self showFloatButton];
     }];
@@ -230,23 +460,25 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.backgroundColor = [UIColor colorWithRed:0.06 green:0.09 blue:0.16 alpha:1.0];
-    button.layer.cornerRadius = 28.0;
-    button.layer.shadowColor = UIColor.blackColor.CGColor;
-    button.layer.shadowOpacity = 0.25;
-    button.layer.shadowRadius = 10.0;
+    button.backgroundColor = [UIColor colorWithRed:0.02 green:0.06 blue:0.11 alpha:0.95];
+    button.layer.cornerRadius = 30.0;
+    button.layer.borderWidth = 1.2;
+    button.layer.borderColor = [[self tolaBlue] colorWithAlphaComponent:0.7].CGColor;
+    button.layer.shadowColor = [self tolaBlue].CGColor;
+    button.layer.shadowOpacity = 0.34;
+    button.layer.shadowRadius = 13.0;
     button.layer.shadowOffset = CGSizeMake(0.0, 5.0);
 
     UIImage *iconImage = [self floatingIconImage];
     if (iconImage) {
         button.imageView.contentMode = UIViewContentModeScaleAspectFit;
-        button.imageEdgeInsets = UIEdgeInsetsMake(9.0, 9.0, 9.0, 9.0);
+        button.imageEdgeInsets = UIEdgeInsetsMake(7.0, 7.0, 7.0, 7.0);
         [button setImage:[iconImage imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal]
                 forState:UIControlStateNormal];
     } else {
-        button.titleLabel.font = [UIFont systemFontOfSize:22.0 weight:UIFontWeightBold];
+        button.titleLabel.font = [UIFont systemFontOfSize:23.0 weight:UIFontWeightHeavy];
         [button setTitle:@"T" forState:UIControlStateNormal];
-        [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+        [button setTitleColor:[self tolaBlue] forState:UIControlStateNormal];
     }
 
     [button addTarget:self action:@selector(showMenu) forControlEvents:UIControlEventTouchUpInside];
@@ -260,8 +492,8 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
     UILayoutGuide *safeArea = rootView.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [button.widthAnchor constraintEqualToConstant:56.0],
-        [button.heightAnchor constraintEqualToConstant:56.0],
+        [button.widthAnchor constraintEqualToConstant:60.0],
+        [button.heightAnchor constraintEqualToConstant:60.0],
         [button.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-18.0],
         [button.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-28.0]
     ]];

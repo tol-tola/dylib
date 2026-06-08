@@ -2,9 +2,9 @@
 
 Minimal iOS dylib starter for authorized IPA testing.
 
-When loaded, it shows a welcome menu titled `TolaiOs` with Telegram, TikTok,
-Facebook, Website, and Close buttons. Closing the menu leaves a floating `T`
-button that opens the menu again.
+When loaded, it shows a dark responsive menu titled `TolaiOS` with Telegram,
+TikTok, Facebook, Website, and Close buttons. Closing the menu leaves a floating
+icon button that opens the menu again.
 
 Edit these values at the top of `TolaDylib/Tola.m` before building:
 
@@ -25,6 +25,13 @@ tola_icon.png
 
 Put it in the app bundle when you inject/sign the IPA. If `tola_icon.png` is
 found, the floating button uses it. If not, it falls back to the letter `T`.
+
+The dylib searches these places:
+
+- The main app bundle root
+- The main app resources folder
+- The app's `Frameworks` folder
+- The same folder as `tola.dylib`
 
 Recommended image size: `112x112` or `180x180` PNG with a transparent
 background.

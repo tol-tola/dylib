@@ -16,6 +16,7 @@ xcrun --sdk iphoneos clang \
   -install_name "@rpath/tola.dylib" \
   -framework CoreGraphics \
   -framework Foundation \
+  -framework QuartzCore \
   -framework UIKit \
   "$PROJECT_DIR/TolaDylib/Tola.m" \
   -o "$BUILD_DIR/tola.dylib"
