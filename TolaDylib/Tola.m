@@ -26,6 +26,12 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 @end
 
 @interface TolaLineOverlayView : UIView
+@property (nonatomic, assign) CGPoint cuePoint;
+@property (nonatomic, assign) CGPoint hitPoint;
+@property (nonatomic, assign) CGPoint pocketPoint;
+@property (nonatomic, assign) CGPoint topBankPoint;
+@property (nonatomic, assign) CGPoint bottomBankPoint;
+@property (nonatomic, assign) NSInteger activeHandleIndex;
 @end
 
 @implementation TolaLineOverlayView
@@ -34,8 +40,14 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     self = [super initWithFrame:frame];
     if (self) {
         self.backgroundColor = UIColor.clearColor;
-        self.userInteractionEnabled = NO;
+        self.userInteractionEnabled = YES;
         self.opaque = NO;
+        self.activeHandleIndex = -1;
+        self.cuePoint = CGPointMake(0.30, 0.70);
+        self.hitPoint = CGPointMake(0.58, 0.46);
+        self.pocketPoint = CGPointMake(0.96, 0.70);
+        self.topBankPoint = CGPointMake(0.40, 0.05);
+        self.bottomBankPoint = CGPointMake(0.46, 0.92);
     }
     return self;
 }
@@ -48,6 +60,133 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 - (CGPoint)pointWithX:(CGFloat)x y:(CGFloat)y rect:(CGRect)rect {
     return CGPointMake(CGRectGetMinX(rect) + CGRectGetWidth(rect) * x,
                        CGRectGetMinY(rect) + CGRectGetHeight(rect) * y);
+}
+
+- (CGRect)tableRect {
+    return CGRectInset(self.bounds, 2.0, 2.0);
+}
+
+- (CGPoint)screenPointForNormalizedPoint:(CGPoint)normalizedPoint {
+    CGRect tableRect = [self tableRect];
+    return [self pointWithX:normalizedPoint.x y:normalizedPoint.y rect:tableRect];
+}
+
+- (CGPoint)normalizedPointForScreenPoint:(CGPoint)screenPoint {
+    CGRect tableRect = [self tableRect];
+    CGFloat x = (screenPoint.x - CGRectGetMinX(tableRect)) / MAX(CGRectGetWidth(tableRect), 1.0);
+    CGFloat y = (screenPoint.y - CGRectGetMinY(tableRect)) / MAX(CGRectGetHeight(tableRect), 1.0);
+    x = MIN(MAX(x, 0.0), 1.0);
+    y = MIN(MAX(y, 0.0), 1.0);
+    return CGPointMake(x, y);
+}
+
+- (CGPoint)handlePointAtIndex:(NSInteger)index {
+    switch (index) {
+        case 0:
+            return [self screenPointForNormalizedPoint:self.cuePoint];
+        case 1:
+            return [self screenPointForNormalizedPoint:self.hitPoint];
+        case 2:
+            return [self screenPointForNormalizedPoint:self.pocketPoint];
+        case 3:
+            return [self screenPointForNormalizedPoint:self.topBankPoint];
+        case 4:
+            return [self screenPointForNormalizedPoint:self.bottomBankPoint];
+        default:
+            return CGPointZero;
+    }
+}
+
+- (void)setNormalizedPoint:(CGPoint)point forHandleAtIndex:(NSInteger)index {
+    switch (index) {
+        case 0:
+            self.cuePoint = point;
+            break;
+        case 1:
+            self.hitPoint = point;
+            break;
+        case 2:
+            self.pocketPoint = point;
+            break;
+        case 3:
+            self.topBankPoint = point;
+            break;
+        case 4:
+            self.bottomBankPoint = point;
+            break;
+        default:
+            break;
+    }
+}
+
+- (UIColor *)colorForHandleAtIndex:(NSInteger)index {
+    switch (index) {
+        case 0:
+            return UIColor.whiteColor;
+        case 1:
+            return [UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0];
+        case 2:
+            return [UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0];
+        case 3:
+            return [UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0];
+        case 4:
+            return [UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0];
+        default:
+            return UIColor.whiteColor;
+    }
+}
+
+- (NSInteger)nearestHandleIndexForPoint:(CGPoint)point maximumDistance:(CGFloat)maximumDistance {
+    NSInteger nearestIndex = -1;
+    CGFloat nearestDistanceSquared = maximumDistance * maximumDistance;
+
+    for (NSInteger index = 0; index < 5; index++) {
+        CGPoint handlePoint = [self handlePointAtIndex:index];
+        CGFloat dx = handlePoint.x - point.x;
+        CGFloat dy = handlePoint.y - point.y;
+        CGFloat distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared <= nearestDistanceSquared) {
+            nearestDistanceSquared = distanceSquared;
+            nearestIndex = index;
+        }
+    }
+
+    return nearestIndex;
+}
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (self.hidden || self.alpha < 0.01 || !self.userInteractionEnabled) {
+        return nil;
+    }
+
+    NSInteger handleIndex = [self nearestHandleIndexForPoint:point maximumDistance:34.0];
+    return handleIndex >= 0 ? self : nil;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    UITouch *touch = touches.anyObject;
+    CGPoint point = [touch locationInView:self];
+    self.activeHandleIndex = [self nearestHandleIndexForPoint:point maximumDistance:44.0];
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (self.activeHandleIndex < 0) {
+        return;
+    }
+
+    UITouch *touch = touches.anyObject;
+    CGPoint point = [touch locationInView:self];
+    [self setNormalizedPoint:[self normalizedPointForScreenPoint:point]
+            forHandleAtIndex:self.activeHandleIndex];
+    [self setNeedsDisplay];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    self.activeHandleIndex = -1;
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    self.activeHandleIndex = -1;
 }
 
 - (void)drawGuideFrom:(CGPoint)start
@@ -74,6 +213,13 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 }
 
 - (void)drawDotAt:(CGPoint)point color:(UIColor *)color radius:(CGFloat)radius {
+    UIBezierPath *ringPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(point.x - radius - 7.0,
+                                                                               point.y - radius - 7.0,
+                                                                               (radius + 7.0) * 2.0,
+                                                                               (radius + 7.0) * 2.0)];
+    [[UIColor blackColor] setFill];
+    [ringPath fill];
+
     CGRect dotRect = CGRectMake(point.x - radius, point.y - radius, radius * 2.0, radius * 2.0);
     UIBezierPath *dotPath = [UIBezierPath bezierPathWithOvalInRect:dotRect];
     [[color colorWithAlphaComponent:0.22] setFill];
@@ -86,28 +232,22 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 }
 
 - (void)drawRect:(CGRect)rect {
-    CGRect tableRect = CGRectInset(self.bounds,
-                                   CGRectGetWidth(self.bounds) * 0.14,
-                                   CGRectGetHeight(self.bounds) * 0.18);
+    CGPoint cue = [self handlePointAtIndex:0];
+    CGPoint hit = [self handlePointAtIndex:1];
+    CGPoint pocket = [self handlePointAtIndex:2];
+    CGPoint topBank = [self handlePointAtIndex:3];
+    CGPoint bottomBank = [self handlePointAtIndex:4];
 
-    CGPoint cue = [self pointWithX:0.38 y:0.54 rect:tableRect];
-    CGPoint object = [self pointWithX:0.68 y:0.48 rect:tableRect];
-    CGPoint rightPocket = [self pointWithX:0.98 y:0.86 rect:tableRect];
-    CGPoint topBank = [self pointWithX:0.45 y:0.04 rect:tableRect];
-    CGPoint leftBank = [self pointWithX:0.02 y:0.35 rect:tableRect];
-    CGPoint bottomBank = [self pointWithX:0.52 y:0.98 rect:tableRect];
+    [self drawGuideFrom:cue to:hit color:[UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0] width:2.6];
+    [self drawGuideFrom:hit to:pocket color:[UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0] width:2.2];
+    [self drawGuideFrom:hit to:topBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] width:2.0];
+    [self drawGuideFrom:hit to:bottomBank color:[UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0] width:2.0];
 
-    [self drawGuideFrom:cue to:object color:[UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0] width:2.4];
-    [self drawGuideFrom:object to:rightPocket color:[UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0] width:2.0];
-    [self drawGuideFrom:object to:topBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] width:1.8];
-    [self drawGuideFrom:topBank to:leftBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] width:1.8];
-    [self drawGuideFrom:object to:bottomBank color:[UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0] width:1.8];
-
-    [self drawDotAt:cue color:[UIColor whiteColor] radius:6.0];
-    [self drawDotAt:object color:[UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0] radius:5.0];
-    [self drawDotAt:rightPocket color:[UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0] radius:4.5];
-    [self drawDotAt:topBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] radius:4.5];
-    [self drawDotAt:bottomBank color:[UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0] radius:4.5];
+    for (NSInteger index = 0; index < 5; index++) {
+        [self drawDotAt:[self handlePointAtIndex:index]
+                  color:[self colorForHandleAtIndex:index]
+                 radius:(index == self.activeHandleIndex ? 7.5 : 6.0)];
+    }
 }
 
 @end
@@ -454,7 +594,7 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                       alignment:NSTextAlignmentCenter];
 
     UIControl *lineESP = [self menuRowWithTitle:(self.lineESPEnabled ? @"Line ESP: ON" : @"Line ESP: OFF")
-                                       subtitle:@"Visual aim guide"
+                                       subtitle:@"Drag dots to adjust"
                                        iconName:(self.lineESPEnabled ? @"eye.fill" : @"eye.slash.fill")
                                    fallbackText:@"ESP"
                                     accentColor:(self.lineESPEnabled ? [UIColor colorWithRed:0.16 green:0.86 blue:0.35 alpha:1.0] : [UIColor colorWithRed:1.0 green:0.56 blue:0.18 alpha:1.0])

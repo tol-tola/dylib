@@ -12,8 +12,9 @@ screens, the inside of the modal scrolls instead of becoming full-screen.
 ## Line ESP
 
 The menu includes a `Line ESP` toggle. When enabled, it draws a transparent
-colored guide-line overlay over the game screen. The overlay is visual-only and
-does not read ball positions from the game.
+colored guide-line overlay over the game screen. Drag the dots to adjust the
+cue point, target point, pocket point, and bank points. The overlay is
+visual-only and does not read ball positions from the game.
 
 Edit these values at the top of `TolaDylib/Tola.m` before building:
 
