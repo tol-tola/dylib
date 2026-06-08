@@ -9,6 +9,12 @@ Closing the menu leaves a floating icon button that opens the menu again.
 The menu keeps roughly the same modal size in portrait and landscape. On short
 screens, the inside of the modal scrolls instead of becoming full-screen.
 
+## Line ESP
+
+The menu includes a `Line ESP` toggle. When enabled, it draws a transparent
+colored guide-line overlay over the game screen. The overlay is visual-only and
+does not read ball positions from the game.
+
 Edit these values at the top of `TolaDylib/Tola.m` before building:
 
 ```objc

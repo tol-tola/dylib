@@ -25,10 +25,99 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
 @end
 
+@interface TolaLineOverlayView : UIView
+@end
+
+@implementation TolaLineOverlayView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = UIColor.clearColor;
+        self.userInteractionEnabled = NO;
+        self.opaque = NO;
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self setNeedsDisplay];
+}
+
+- (CGPoint)pointWithX:(CGFloat)x y:(CGFloat)y rect:(CGRect)rect {
+    return CGPointMake(CGRectGetMinX(rect) + CGRectGetWidth(rect) * x,
+                       CGRectGetMinY(rect) + CGRectGetHeight(rect) * y);
+}
+
+- (void)drawGuideFrom:(CGPoint)start
+                   to:(CGPoint)end
+                color:(UIColor *)color
+                width:(CGFloat)width {
+    UIBezierPath *glowPath = [UIBezierPath bezierPath];
+    [glowPath moveToPoint:start];
+    [glowPath addLineToPoint:end];
+    glowPath.lineCapStyle = kCGLineCapRound;
+    glowPath.lineJoinStyle = kCGLineJoinRound;
+    glowPath.lineWidth = width + 5.0;
+    [[color colorWithAlphaComponent:0.18] setStroke];
+    [glowPath stroke];
+
+    UIBezierPath *linePath = [UIBezierPath bezierPath];
+    [linePath moveToPoint:start];
+    [linePath addLineToPoint:end];
+    linePath.lineCapStyle = kCGLineCapRound;
+    linePath.lineJoinStyle = kCGLineJoinRound;
+    linePath.lineWidth = width;
+    [[color colorWithAlphaComponent:0.88] setStroke];
+    [linePath stroke];
+}
+
+- (void)drawDotAt:(CGPoint)point color:(UIColor *)color radius:(CGFloat)radius {
+    CGRect dotRect = CGRectMake(point.x - radius, point.y - radius, radius * 2.0, radius * 2.0);
+    UIBezierPath *dotPath = [UIBezierPath bezierPathWithOvalInRect:dotRect];
+    [[color colorWithAlphaComponent:0.22] setFill];
+    [dotPath fill];
+
+    CGRect innerRect = CGRectInset(dotRect, radius * 0.45, radius * 0.45);
+    UIBezierPath *innerPath = [UIBezierPath bezierPathWithOvalInRect:innerRect];
+    [color setFill];
+    [innerPath fill];
+}
+
+- (void)drawRect:(CGRect)rect {
+    CGRect tableRect = CGRectInset(self.bounds,
+                                   CGRectGetWidth(self.bounds) * 0.14,
+                                   CGRectGetHeight(self.bounds) * 0.18);
+
+    CGPoint cue = [self pointWithX:0.38 y:0.54 rect:tableRect];
+    CGPoint object = [self pointWithX:0.68 y:0.48 rect:tableRect];
+    CGPoint rightPocket = [self pointWithX:0.98 y:0.86 rect:tableRect];
+    CGPoint topBank = [self pointWithX:0.45 y:0.04 rect:tableRect];
+    CGPoint leftBank = [self pointWithX:0.02 y:0.35 rect:tableRect];
+    CGPoint bottomBank = [self pointWithX:0.52 y:0.98 rect:tableRect];
+
+    [self drawGuideFrom:cue to:object color:[UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0] width:2.4];
+    [self drawGuideFrom:object to:rightPocket color:[UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0] width:2.0];
+    [self drawGuideFrom:object to:topBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] width:1.8];
+    [self drawGuideFrom:topBank to:leftBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] width:1.8];
+    [self drawGuideFrom:object to:bottomBank color:[UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0] width:1.8];
+
+    [self drawDotAt:cue color:[UIColor whiteColor] radius:6.0];
+    [self drawDotAt:object color:[UIColor colorWithRed:1.0 green:0.93 blue:0.18 alpha:1.0] radius:5.0];
+    [self drawDotAt:rightPocket color:[UIColor colorWithRed:0.25 green:0.95 blue:1.0 alpha:1.0] radius:4.5];
+    [self drawDotAt:topBank color:[UIColor colorWithRed:1.0 green:0.18 blue:0.22 alpha:1.0] radius:4.5];
+    [self drawDotAt:bottomBank color:[UIColor colorWithRed:0.65 green:0.2 blue:1.0 alpha:1.0] radius:4.5];
+}
+
+@end
+
 @interface TolaOverlayController : NSObject
 @property (nonatomic, strong) UIWindow *overlayWindow;
 @property (nonatomic, strong) UIView *menuView;
 @property (nonatomic, strong) UIButton *floatButton;
+@property (nonatomic, strong) TolaLineOverlayView *lineOverlayView;
+@property (nonatomic, assign) BOOL lineESPEnabled;
 @end
 
 @implementation TolaOverlayController
@@ -266,6 +355,39 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     return stack;
 }
 
+- (void)updateLineESPOverlay {
+    UIView *rootView = self.overlayWindow.rootViewController.view;
+
+    if (!self.lineESPEnabled) {
+        [self.lineOverlayView removeFromSuperview];
+        self.lineOverlayView = nil;
+        return;
+    }
+
+    if (self.lineOverlayView) {
+        [self.lineOverlayView setNeedsDisplay];
+        return;
+    }
+
+    TolaLineOverlayView *lineOverlay = [[TolaLineOverlayView alloc] initWithFrame:rootView.bounds];
+    lineOverlay.translatesAutoresizingMaskIntoConstraints = NO;
+    [rootView insertSubview:lineOverlay atIndex:0];
+    self.lineOverlayView = lineOverlay;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [lineOverlay.topAnchor constraintEqualToAnchor:rootView.topAnchor],
+        [lineOverlay.leadingAnchor constraintEqualToAnchor:rootView.leadingAnchor],
+        [lineOverlay.trailingAnchor constraintEqualToAnchor:rootView.trailingAnchor],
+        [lineOverlay.bottomAnchor constraintEqualToAnchor:rootView.bottomAnchor]
+    ]];
+}
+
+- (void)toggleLineESP {
+    self.lineESPEnabled = !self.lineESPEnabled;
+    [self updateLineESPOverlay];
+    [self showMenu];
+}
+
 - (void)showMenu {
     [self prepareOverlayWindow];
     [self.floatButton removeFromSuperview];
@@ -275,8 +397,11 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
 
     UIView *rootView = self.overlayWindow.rootViewController.view;
     for (UIView *view in [rootView.subviews copy]) {
-        [view removeFromSuperview];
+        if (view != self.lineOverlayView) {
+            [view removeFromSuperview];
+        }
     }
+    [self updateLineESPOverlay];
 
     BOOL compact = CGRectGetHeight(rootView.bounds) < 620.0 || CGRectGetWidth(rootView.bounds) < 370.0;
 
@@ -328,6 +453,14 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                            color:[UIColor colorWithWhite:0.58 alpha:1.0]
                                       alignment:NSTextAlignmentCenter];
 
+    UIControl *lineESP = [self menuRowWithTitle:(self.lineESPEnabled ? @"Line ESP: ON" : @"Line ESP: OFF")
+                                       subtitle:@"Visual aim guide"
+                                       iconName:(self.lineESPEnabled ? @"eye.fill" : @"eye.slash.fill")
+                                   fallbackText:@"ESP"
+                                    accentColor:(self.lineESPEnabled ? [UIColor colorWithRed:0.16 green:0.86 blue:0.35 alpha:1.0] : [UIColor colorWithRed:1.0 green:0.56 blue:0.18 alpha:1.0])
+                                         action:@selector(toggleLineESP)
+                                        compact:compact];
+
     UIControl *telegram = [self menuRowWithTitle:@"Telegram"
                                         subtitle:@"Join our Telegram Channel"
                                         iconName:@"paperplane.fill"
@@ -360,7 +493,7 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
                                         compact:compact];
     UIStackView *rowsView = [self stackWithAxis:UILayoutConstraintAxisVertical
                                         spacing:(compact ? 12.0 : 16.0)
-                                         views:@[telegram, tikTok, facebook, website]];
+                                         views:@[lineESP, telegram, tikTok, facebook, website]];
 
     UIStackView *contentStack = [[UIStackView alloc] initWithArrangedSubviews:@[
         topIconView,
@@ -435,9 +568,12 @@ static NSString * const TolaFloatingIconFileName = @"tola_icon.png";
     } completion:^(BOOL finished) {
         UIView *rootView = self.overlayWindow.rootViewController.view;
         for (UIView *view in [rootView.subviews copy]) {
-            [view removeFromSuperview];
+            if (view != self.lineOverlayView) {
+                [view removeFromSuperview];
+            }
         }
         self.menuView = nil;
+        [self updateLineESPOverlay];
         [self showFloatButton];
     }];
 }
