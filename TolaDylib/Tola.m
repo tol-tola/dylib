@@ -168,13 +168,6 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
 }
 
 - (void)drawRect:(CGRect)rect {
-    if (!CGRectIsEmpty(self.detectedTableRect)) {
-        UIBezierPath *tablePath = [UIBezierPath bezierPathWithRoundedRect:self.detectedTableRect cornerRadius:10.0];
-        [[UIColor colorWithRed:0.1 green:1.0 blue:0.45 alpha:0.13] setStroke];
-        tablePath.lineWidth = 1.0;
-        [tablePath stroke];
-    }
-
     for (TolaPoolPrediction *prediction in self.predictions) {
         [self drawGuideFrom:prediction.start
                          to:prediction.end
@@ -191,30 +184,18 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
 
     for (NSValue *pocketValue in self.greenPockets) {
         CGPoint pocket = pocketValue.CGPointValue;
-        UIBezierPath *pocketPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(pocket.x - 18.0,
-                                                                                    pocket.y - 18.0,
-                                                                                    36.0,
-                                                                                    36.0)];
-        [[UIColor colorWithRed:0.1 green:1.0 blue:0.35 alpha:0.35] setFill];
+        UIBezierPath *pocketPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(pocket.x - 11.0,
+                                                                                    pocket.y - 11.0,
+                                                                                    22.0,
+                                                                                    22.0)];
+        [[UIColor colorWithRed:0.1 green:1.0 blue:0.35 alpha:0.22] setFill];
         [pocketPath fill];
         [[UIColor colorWithRed:0.1 green:1.0 blue:0.35 alpha:0.95] setStroke];
-        pocketPath.lineWidth = 3.0;
+        pocketPath.lineWidth = 2.0;
         [pocketPath stroke];
     }
 
-    for (TolaPoolBall *ball in self.balls) {
-        UIColor *color = ball.cueBall ? UIColor.whiteColor : [UIColor colorWithRed:1.0 green:0.88 blue:0.18 alpha:1.0];
-        [self drawDotAt:ball.center color:color radius:MAX(ball.radius * 0.45, 4.0)];
-    }
-
-    if (self.statusText.length > 0) {
-        NSDictionary *attributes = @{
-            NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightBold],
-            NSForegroundColorAttributeName: [UIColor colorWithWhite:1.0 alpha:0.82]
-        };
-        [self.statusText drawAtPoint:CGPointMake(14.0, CGRectGetMaxY(self.bounds) - 28.0)
-                      withAttributes:attributes];
-    }
+    // Keep the in-game view clean: no debug ball dots or status text.
 }
 
 @end
@@ -651,6 +632,42 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
     return bestBall;
 }
 
+- (CGPoint)correctedAimDirection:(CGPoint)aimDirection
+                          cueBall:(TolaPoolBall *)cueBall
+                            balls:(NSArray<TolaPoolBall *> *)balls
+                        tableRect:(CGRect)tableRect {
+    CGPoint forward = TolaNormalizeVector(aimDirection);
+    if (CGPointEqualToPoint(forward, CGPointZero) || !cueBall) {
+        return forward;
+    }
+
+    CGPoint backward = CGPointMake(-forward.x, -forward.y);
+    TolaPoolBall *forwardHit = [self firstBallHitFrom:cueBall.center
+                                           direction:forward
+                                               balls:balls
+                                              ignore:cueBall
+                                           tableRect:tableRect];
+    TolaPoolBall *backwardHit = [self firstBallHitFrom:cueBall.center
+                                            direction:backward
+                                                balls:balls
+                                               ignore:cueBall
+                                            tableRect:tableRect];
+
+    if (!forwardHit && backwardHit) {
+        return backward;
+    }
+
+    if (forwardHit && backwardHit) {
+        CGFloat forwardDistance = TolaDistance(cueBall.center, forwardHit.center);
+        CGFloat backwardDistance = TolaDistance(cueBall.center, backwardHit.center);
+        if (backwardDistance + cueBall.radius * 2.0 < forwardDistance) {
+            return backward;
+        }
+    }
+
+    return forward;
+}
+
 - (BOOL)isPathClearFrom:(CGPoint)start
                      to:(CGPoint)end
                   balls:(NSArray<TolaPoolBall *> *)balls
@@ -914,6 +931,24 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
     NSMutableArray<TolaPoolBall *> *shownBalls = [NSMutableArray arrayWithObject:cueBall];
     NSMutableArray<NSValue *> *greenPockets = [NSMutableArray array];
     NSInteger maxCandidates = MIN((NSInteger)candidates.count, 1);
+
+    if (maxCandidates == 0 && hasAimDirection && aimedObjectBall) {
+        CGPoint contactPoint = TolaPointAlongLine(cueBall.center,
+                                                  aimedObjectBall.center,
+                                                  cueBall.radius + aimedObjectBall.radius);
+        [predictions addObject:[self predictionFrom:cueBall.center
+                                                 to:contactPoint
+                                              color:[UIColor colorWithWhite:1.0 alpha:0.95]
+                                              width:2.8]];
+        [shownBalls addObject:aimedObjectBall];
+
+        return @{
+            @"balls": shownBalls,
+            @"predictions": predictions,
+            @"pockets": greenPockets,
+            @"status": @"Auto ESP: first hit"
+        };
+    }
 
     for (NSInteger index = 0; index < maxCandidates; index++) {
         NSDictionary *candidate = candidates[index];
@@ -1246,6 +1281,12 @@ static CGFloat TolaDotProduct(CGPoint a, CGPoint b) {
                                                        scaleX:scaleX
                                                        scaleY:scaleY
                                                     outVector:&aimDirection];
+    if (hasAimDirection) {
+        aimDirection = [self correctedAimDirection:aimDirection
+                                           cueBall:cueBall
+                                             balls:balls
+                                         tableRect:tableRect];
+    }
     NSDictionary *prediction = [self predictionForBalls:balls
                                               tableRect:tableRect
                                                 cueBall:cueBall
